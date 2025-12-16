@@ -6,12 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "type-check": "tsc --noEmit",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@mediapipe/selfie_segmentation": "^0.1.1675465747",
     "@radix-ui/react-slot": "^1.2.4",
     "@tanstack/react-query": "^5.90.12",
+    "@video-call/types": "workspace:*",
+    "@video-call/utils": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
