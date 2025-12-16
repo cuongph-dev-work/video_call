@@ -40,6 +40,8 @@ export function useLocalStream() {
   useEffect(() => {
     if (!selectedMic || !selectedCamera) return;
 
+    let currentStream: MediaStream | null = null;
+
     const initStream = async () => {
       try {
         const constraints: MediaStreamConstraints = {
@@ -58,6 +60,7 @@ export function useLocalStream() {
         };
 
         const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        currentStream = mediaStream;
         setStream(mediaStream);
         setError(null);
       } catch (err: unknown) {
@@ -70,7 +73,10 @@ export function useLocalStream() {
     void initStream();
 
     return () => {
-      if (stream) {
+      // Clean up current stream or previous stream
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      } else if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
     };

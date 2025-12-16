@@ -17,6 +17,7 @@ interface Participant {
 export function usePeerConnection({ localStream, socket }: UsePeerConnectionProps) {
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
+  const pendingOffersRef = useRef<Set<string>>(new Set()); // Track pending offers to prevent race conditions
 
   const closePeer = useCallback((peerId: string) => {
     const pc = peersRef.current.get(peerId);
@@ -25,6 +26,7 @@ export function usePeerConnection({ localStream, socket }: UsePeerConnectionProp
       peersRef.current.delete(peerId);
     }
     remoteStreamsRef.current.delete(peerId);
+    pendingOffersRef.current.delete(peerId);
     
     window.dispatchEvent(new CustomEvent('remote-stream-removed', {
       detail: { peerId }
@@ -77,8 +79,20 @@ export function usePeerConnection({ localStream, socket }: UsePeerConnectionProp
   }, [localStream, socket, closePeer]);
 
   const createOffer = useCallback(async (peerId: string) => {
+    // Prevent duplicate offers (race condition protection)
+    if (pendingOffersRef.current.has(peerId)) {
+      return;
+    }
+
     try {
+      pendingOffersRef.current.add(peerId);
       const pc = peersRef.current.get(peerId) || createPeerConnection(peerId);
+      
+      // Check if connection already exists and is stable
+      if (pc.signalingState !== 'stable' && pc.signalingState !== 'have-local-offer') {
+        pendingOffersRef.current.delete(peerId);
+        return;
+      }
       
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -90,12 +104,26 @@ export function usePeerConnection({ localStream, socket }: UsePeerConnectionProp
       console.log('📤 Sent offer to', peerId);
     } catch (error) {
       console.error('Error creating offer:', error);
+      pendingOffersRef.current.delete(peerId);
     }
   }, [createPeerConnection, socket]);
 
   const handleOffer = useCallback(async (peerId: string, offer: RTCSessionDescriptionInit) => {
     try {
-      const pc = peersRef.current.get(peerId) || createPeerConnection(peerId);
+      let pc = peersRef.current.get(peerId);
+      
+      // Handle race condition: if we already have a connection, check its state
+      if (pc) {
+        // If we're in a state that can't accept an offer, create new connection
+        if (pc.signalingState === 'have-local-offer' || pc.signalingState === 'have-remote-offer') {
+          // Close existing connection and create new one
+          pc.close();
+          peersRef.current.delete(peerId);
+          pc = createPeerConnection(peerId);
+        }
+      } else {
+        pc = createPeerConnection(peerId);
+      }
       
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await pc.createAnswer();
@@ -105,9 +133,11 @@ export function usePeerConnection({ localStream, socket }: UsePeerConnectionProp
         socket.emit('answer', { to: peerId, answer });
       }
       
+      pendingOffersRef.current.delete(peerId);
       console.log('📤 Sent answer to', peerId);
     } catch (error) {
       console.error('Error handling offer:', error);
+      pendingOffersRef.current.delete(peerId);
     }
   }, [createPeerConnection, socket]);
 
@@ -138,6 +168,7 @@ export function usePeerConnection({ localStream, socket }: UsePeerConnectionProp
     peersRef.current.forEach((pc) => pc.close());
     peersRef.current.clear();
     remoteStreamsRef.current.clear();
+    pendingOffersRef.current.clear();
   }, []);
 
   // Setup socket listeners

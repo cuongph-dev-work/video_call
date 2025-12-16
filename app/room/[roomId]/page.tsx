@@ -72,9 +72,13 @@ export default function RoomPage() {
     const [waitingUsers, setWaitingUsers] = useState<WaitingUser[]>([]);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
-    // Use useState with lazy initializer to avoid hydration mismatch
-    // The function only runs once on client mount, never on server
-    const [displayName] = useState(() => 'User ' + Math.floor(Math.random() * 1000));
+    // Use useState with useEffect to avoid hydration mismatch
+    const [displayName, setDisplayName] = useState('Guest');
+    
+    // Set random name only on client side after mount
+    useEffect(() => {
+        setDisplayName('User ' + Math.floor(Math.random() * 1000));
+    }, []);
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [recordingTime, setRecordingTime] = useState<string>('00:00:00');

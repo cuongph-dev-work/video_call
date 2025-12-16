@@ -2,6 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Video, Mic, Volume2, Sparkles, Sliders, ChevronDown, VideoOff } from 'lucide-react';
+import { BackgroundSelector } from '../BackgroundSelector';
+import { BackgroundType } from '@/lib/background-processor';
+import { useVirtualBackground } from '@/hooks/useVirtualBackground';
 
 export const MediaTab: React.FC = () => {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -31,12 +34,26 @@ export const MediaTab: React.FC = () => {
         noiseCancellation: true,
         echoCancellation: true,
         autoGainControl: true,
-        backgroundBlur: false,
+        backgroundType: 'none' as BackgroundType,
         mirrorVideo: true,
     });
 
+    const [showBackgroundSelector, setShowBackgroundSelector] = useState(false);
+
     const [audioLevel, setAudioLevel] = useState(0);
     const [isVideoEnabled, setIsVideoEnabled] = useState(true);
+
+    // Virtual background processing
+    const {
+        isReady: isBackgroundReady,
+        isProcessing: isBackgroundProcessing,
+        error: backgroundError,
+        setBackgroundType: applyBackground,
+        isSupported: isBackgroundSupported,
+    } = useVirtualBackground({
+        videoElement: videoRef.current,
+        enabled: settings.backgroundType !== 'none',
+    });
 
     // Get available media devices
     useEffect(() => {
@@ -380,30 +397,94 @@ export const MediaTab: React.FC = () => {
 
             {/* Background Effects */}
             <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-2">
-                    <Sparkles className="w-4 h-4" />
-                    Hiệu ứng nền
-                </h3>
+                <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                        <Sparkles className="w-4 h-4" />
+                        Hiệu ứng nền
+                    </h3>
+                    <button
+                        onClick={() => setShowBackgroundSelector(!showBackgroundSelector)}
+                        className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                    >
+                        {showBackgroundSelector ? 'Ẩn' : 'Tùy chỉnh'}
+                    </button>
+                </div>
 
-                <ToggleOption
-                    label="Làm mờ nền (Background Blur)"
-                    description="Làm mờ background phía sau bạn"
-                    checked={settings.backgroundBlur}
-                    onChange={(checked) => setSettings(prev => ({ ...prev, backgroundBlur: checked }))}
-                    badge="Premium"
-                />
-
-                <div className="bg-blue-600/10 border border-blue-600/20 rounded-lg p-4">
-                    <div className="flex items-start gap-3">
-                        <Sparkles className="w-5 h-5 text-blue-400 mt-0.5" />
+                {/* Current Background Status */}
+                <div className="flex items-center justify-between p-3 rounded-lg bg-[#222730] border border-[#313845]">
+                    <div className="flex items-center gap-3">
+                        <Sparkles className={`w-5 h-5 ${isBackgroundProcessing ? 'text-blue-400 animate-pulse' : 'text-gray-400'}`} />
                         <div>
-                            <p className="text-sm font-medium text-blue-300">Virtual Backgrounds</p>
-                            <p className="text-xs text-blue-400/70 mt-1">
-                                Nâng cấp lên Premium để sử dụng ảnh nền ảo và nhiều hiệu ứng khác
+                            <p className="text-sm font-medium text-gray-200">
+                                {settings.backgroundType === 'none' && 'Không có nền'}
+                                {settings.backgroundType === 'blur' && 'Làm mờ nền'}
+                                {settings.backgroundType === 'image' && 'Nền ảnh tùy chỉnh'}
+                                {isBackgroundProcessing && ' (Đang xử lý...)'}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                                {settings.backgroundType === 'none' && 'Video gốc không có hiệu ứng'}
+                                {settings.backgroundType === 'blur' && 'Nền được làm mờ'}
+                                {settings.backgroundType === 'image' && 'Đang sử dụng ảnh nền'}
+                                {backgroundError && ` - Lỗi: ${backgroundError}`}
                             </p>
                         </div>
                     </div>
+                    
+                    {/* Status indicators */}
+                    <div className="flex flex-col items-end gap-1">
+                        {!isBackgroundSupported && (
+                            <span className="text-xs text-red-400">Không hỗ trợ</span>
+                        )}
+                        {isBackgroundSupported && !isBackgroundReady && (
+                            <span className="text-xs text-yellow-400">Đang tải...</span>
+                        )}
+                        {isBackgroundSupported && isBackgroundReady && (
+                            <span className="text-xs text-green-400">✓ Sẵn sàng</span>
+                        )}
+                    </div>
                 </div>
+
+                {/* Background Selector - Collapsible */}
+                {showBackgroundSelector && (
+                    <div className="border border-[#313845] rounded-lg overflow-hidden">
+                        <BackgroundSelector
+                            onSelect={async (type, options) => {
+                                setSettings(prev => ({ ...prev, backgroundType: type }));
+                                
+                                // Apply background to video stream
+                                try {
+                                    await applyBackground(type, options);
+                                    console.log('✅ Background applied:', type, options);
+                                } catch (error) {
+                                    console.error('❌ Failed to apply background:', error);
+                                }
+                            }}
+                            currentType={settings.backgroundType}
+                        />
+                    </div>
+                )}
+
+                {/* Info Note */}
+                {!isBackgroundSupported ? (
+                    <div className="bg-red-600/10 border border-red-600/20 rounded-lg p-3">
+                        <div className="flex items-start gap-2">
+                            <Sparkles className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+                            <div className="text-xs text-red-400/90">
+                                <p className="font-semibold mb-1">⚠️ Nền ảo không khả dụng</p>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="bg-blue-600/10 border border-blue-600/20 rounded-lg p-3">
+                        <div className="flex items-start gap-2">
+                            <Sparkles className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                            <p className="text-xs text-blue-400/90">
+                                <strong>Lưu ý:</strong> Nền ảo sử dụng AI (MediaPipe) để tách người khỏi background. 
+                                Có thể ảnh hưởng hiệu suất trên thiết bị yếu. Cần kết nối internet lần đầu để tải models.
+                            </p>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
