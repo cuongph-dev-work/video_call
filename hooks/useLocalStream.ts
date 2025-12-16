@@ -32,30 +32,42 @@ export function useLocalStream() {
     }
   };
 
-  // Initialize stream
-  const startStream = async () => {
-    try {
-      const constraints: MediaStreamConstraints = {
-        audio: selectedMic
-          ? { ...mediaConstraints.audio, deviceId: { exact: selectedMic } }
-          : mediaConstraints.audio,
-        video: selectedCamera
-          ? { ...mediaConstraints.video, deviceId: { exact: selectedCamera } }
-          : mediaConstraints.video,
-      };
-
-      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-      setStream(mediaStream);
-      setError(null);
-    } catch (err: any) {
-      console.error('Error accessing media devices:', err);
-      setError(err.message || 'Failed to access camera/microphone');
-    }
-  };
-
+  // Initialize stream when devices are selected
   useEffect(() => {
     getDevices();
-    startStream();
+  }, []); // Run once to get devices
+
+  useEffect(() => {
+    if (!selectedMic || !selectedCamera) return;
+
+    const initStream = async () => {
+      try {
+        const constraints: MediaStreamConstraints = {
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            deviceId: { exact: selectedMic },
+          },
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: 'user',
+            deviceId: { exact: selectedCamera },
+          },
+        };
+
+        const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        setStream(mediaStream);
+        setError(null);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to access camera/microphone';
+        console.error('Error accessing media devices:', err);
+        setError(message);
+      }
+    };
+
+    void initStream();
 
     return () => {
       if (stream) {

@@ -29,8 +29,6 @@ export const mediaConstraints: MediaStreamConstraints = {
 };
 
 export const screenShareConstraints: DisplayMediaStreamOptions = {
-  video: {
-    cursor: 'always' as const,
-  },
+  video: true,
   audio: false,
 };
