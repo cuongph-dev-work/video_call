@@ -3,6 +3,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { generateMeetingCode } from '@video-call/utils';
+import { toast } from 'sonner';
+import { CreateMeetingModal, MeetingConfig } from '@/domains/room/components/CreateMeetingModal';
 import {
   Video,
   Home,
@@ -114,11 +116,40 @@ export default function HomePage() {
     return `${cleaned.slice(0, 2)}-${cleaned.slice(2, 6)}-${cleaned.slice(6, 8)}`;
   }, []);
 
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  // Meeting Config State (for scheduled meetings - simpler implementation for now just alerts)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [scheduledMeeting, setScheduledMeeting] = useState<{ code: string, time: string, name: string } | null>(null);
+
   const handleNewMeeting = useCallback(() => {
-    // Generate Google Meet style room code: XX-XXXX-XX
-    const roomId = generateMeetingCode();
-    // Navigate to pre-join page first
-    router.push(`/room/${roomId}/pre-join`);
+    setIsModalOpen(true);
+  }, []);
+
+  const handleCreateMeeting = useCallback((config: MeetingConfig) => {
+    setIsModalOpen(false);
+
+    if (config.isInstant) {
+      // Instant meeting: Redirect to pre-join immediately
+      // In a real app, we would send 'config' to backend here to persist settings
+      // For now, we just navigate
+      router.push(`/room/${config.roomId}/pre-join`);
+    } else {
+      // Scheduled meeting: Just show alert for now as per US accept criteria "show screen with link" (simplified)
+      // We'll use a simple alert for Phase 4 MVP to avoid building a full "Success" screen/modal right now unless requested
+      // Scheduled meeting: Use toast.success
+      toast.success(
+        <div className="flex flex-col gap-1">
+          <span className="font-bold text-sm">Đã lên lịch cuộc họp!</span>
+          <div className="text-xs text-gray-500 flex flex-col gap-0.5">
+            <span>Tên: {config.name}</span>
+            <span>Thời gian: {new Date(config.scheduledTime || '').toLocaleString()}</span>
+            <span>Mã phòng: {config.roomId}</span>
+          </div>
+        </div>,
+        { duration: 5000 }
+      );
+    }
   }, [router]);
 
   const handleJoinMeeting = useCallback(() => {
@@ -127,8 +158,8 @@ export default function HomePage() {
       // Navigate to pre-join page
       router.push(`/room/${formatted}/pre-join`);
     } else {
-      // Show error - in production use toast/notification
-      alert('Invalid room code. Please enter 8 letters (e.g., AB-CDEF-GH)');
+      // Show error
+      toast.error('Mã phòng không hợp lệ. Vui lòng nhập 8 chữ cái (VD: AB-CDEF-GH)');
     }
   }, [roomCode, router, validateAndFormatRoomCode]);
 
@@ -290,6 +321,13 @@ export default function HomePage() {
           </div>
         </main>
       </div>
+
+      <CreateMeetingModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onCreate={handleCreateMeeting}
+        username={username}
+      />
     </div>
   );
 }
