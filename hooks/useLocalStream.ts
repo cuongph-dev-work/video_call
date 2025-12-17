@@ -41,9 +41,15 @@ export function useLocalStream() {
     if (!selectedMic || !selectedCamera) return;
 
     let currentStream: MediaStream | null = null;
+    let isMounted = true;
 
     const initStream = async () => {
       try {
+        // Stop previous stream before creating new one
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+
         const constraints: MediaStreamConstraints = {
           audio: {
             echoCancellation: true,
@@ -60,12 +66,20 @@ export function useLocalStream() {
         };
 
         const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        if (!isMounted) {
+          // Component unmounted, stop tracks immediately
+          mediaStream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
         currentStream = mediaStream;
         setStream(mediaStream);
         setError(null);
       } catch (err: unknown) {
+        if (!isMounted) return;
+        
         const message = err instanceof Error ? err.message : 'Failed to access camera/microphone';
-        console.error('Error accessing media devices:', err);
         setError(message);
       }
     };
@@ -73,14 +87,17 @@ export function useLocalStream() {
     void initStream();
 
     return () => {
-      // Clean up current stream or previous stream
+      isMounted = false;
+      // Clean up current stream
       if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
-      } else if (stream) {
+      }
+      // Also clean up previous stream if exists
+      if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [selectedMic, selectedCamera]);
+  }, [selectedMic, selectedCamera, stream]);
 
   const toggleAudio = () => {
     if (stream) {

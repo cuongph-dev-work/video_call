@@ -7,6 +7,7 @@ import { useSocket } from '@/hooks/useSocket';
 import { useLocalStream } from '@/hooks/useLocalStream';
 import { usePeerConnection } from '@/hooks/usePeerConnection';
 import { useScreenShare } from '@/hooks/useScreenShare';
+import { useMediaRecorder } from '@/hooks/useMediaRecorder';
 import { useChatStore } from '@/store/useChatStore';
 
 // New components
@@ -15,6 +16,7 @@ import { VideoSection } from './components/VideoSection';
 import { ControlBar } from './components/ControlBar';
 import { Sidebar } from './components/Sidebar';
 import { WaitingUsersNotification } from '@/components/WaitingUsersNotification';
+import { RecordingIndicator } from '@/components/RecordingIndicator';
 import type { WaitingUser } from '../../../../../packages/types/src/waiting-room';
 
 // Lazy load RoomSettingsModal
@@ -80,9 +82,17 @@ export default function RoomPage() {
         setDisplayName('User ' + Math.floor(Math.random() * 1000));
     }, []);
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const [recordingTime, setRecordingTime] = useState<string>('00:00:00');
-    const [isRecording, setIsRecording] = useState(false);
+    // Recording - use combined stream (screen share or local)
+    const recordingStream = isSharing ? screenStream : localStream;
+    const {
+        isRecording,
+        isPaused,
+        duration: recordingDuration,
+        startRecording,
+        stopRecording,
+        downloadRecording,
+        formatDuration,
+    } = useMediaRecorder(recordingStream);
 
     // Track if already joined to prevent re-joining on HMR
     const hasJoinedRef = useRef(false);
@@ -295,7 +305,7 @@ export default function RoomPage() {
                 stream,
                 displayName: participant?.displayName || 'User',
                 audioEnabled: participant?.audioEnabled ?? true,
-                isActiveSpeaker: false, // TODO: Implement active speaker detection
+                isActiveSpeaker: false,
             };
         });
     }, [remoteStreamsList, participants]);
@@ -322,6 +332,14 @@ export default function RoomPage() {
                 onOpenSettings={() => setIsSettingsModalOpen(true)}
             />
 
+            {/* Recording Indicator */}
+            {isRecording && (
+                <RecordingIndicator
+                    duration={recordingDuration}
+                    formatDuration={formatDuration}
+                />
+            )}
+
             {/* Waiting Users Notification */}
             {waitingUsers.length > 0 && (
                 <WaitingUsersNotification
@@ -339,7 +357,7 @@ export default function RoomPage() {
                             displayName: displayName + (isSharing ? ' (Screen)' : ''),
                         }}
                         participants={videoParticipants}
-                        recordingTime={recordingTime}
+                        recordingTime={formatDuration()}
                         isRecording={isRecording}
                     />
 
@@ -351,7 +369,13 @@ export default function RoomPage() {
                         onToggleAudio={handleToggleAudio}
                         onToggleVideo={handleToggleVideo}
                         onToggleScreenShare={handleToggleScreenShare}
-                        onToggleRecording={() => setIsRecording(!isRecording)}
+                        onToggleRecording={() => {
+                            if (isRecording) {
+                                stopRecording();
+                            } else {
+                                startRecording();
+                            }
+                        }}
                         onEndCall={handleEndCall}
                     />
                 </div>

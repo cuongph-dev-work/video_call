@@ -1,17 +1,30 @@
 // WebRTC Configuration
 
-export const rtcConfig: RTCConfiguration = {
-  iceServers: [
+const getIceServers = (): RTCIceServer[] => {
+  const servers: RTCIceServer[] = [
     {
       urls: process.env.NEXT_PUBLIC_STUN_SERVER || 'stun:stun.l.google.com:19302',
     },
-    // Add TURN servers for production
-    // {
-    //   urls: 'turn:your-turn-server.com:3478',
-    //   username: 'username',
-    //   credential: 'password'
-    // }
-  ],
+  ];
+
+  // Add TURN server if configured
+  const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
+  const turnUsername = process.env.NEXT_PUBLIC_TURN_USERNAME;
+  const turnPassword = process.env.NEXT_PUBLIC_TURN_PASSWORD;
+
+  if (turnUrl && turnUsername && turnPassword) {
+    servers.push({
+      urls: turnUrl,
+      username: turnUsername,
+      credential: turnPassword,
+    });
+  }
+
+  return servers;
+};
+
+export const rtcConfig: RTCConfiguration = {
+  iceServers: getIceServers(),
   iceCandidatePoolSize: 10,
 };
 

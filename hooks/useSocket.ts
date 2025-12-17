@@ -23,7 +23,6 @@ export function useSocket() {
     });
 
     newSocket.on('connect', () => {
-      console.log('✅ Socket connected:', newSocket.id);
       setIsConnected(true);
       setIsReconnecting(false);
       setError(null);
@@ -34,7 +33,6 @@ export function useSocket() {
     });
 
     newSocket.on('disconnect', (reason) => {
-      console.log('❌ Socket disconnected:', reason);
       setIsConnected(false);
       
       // If disconnect is not intentional, mark as reconnecting
@@ -52,24 +50,20 @@ export function useSocket() {
     });
 
     newSocket.on('connect_error', (err: Error) => {
-      console.error('Socket connection error:', err);
       setError(err.message);
       setIsReconnecting(true);
     });
 
     newSocket.on('error', (err: Error) => {
-      console.error('Socket error:', err);
       setError(err.message);
     });
 
-    newSocket.on('reconnect_attempt', (attemptNumber) => {
-      console.log(`🔄 Reconnection attempt ${attemptNumber}`);
+    newSocket.on('reconnect_attempt', () => {
       setIsReconnecting(true);
       setError(null);
     });
 
     newSocket.on('reconnect_failed', () => {
-      console.error('❌ Reconnection failed');
       setError('Không thể kết nối đến server. Vui lòng thử lại sau.');
       setIsReconnecting(false);
     });
@@ -87,9 +81,8 @@ export function useSocket() {
   const emit = useCallback(<T,>(event: string, data: T) => {
     if (socketRef.current && isConnected) {
       socketRef.current.emit(event, data);
-    } else {
-      console.warn('Cannot emit: socket not connected');
     }
+    // Silently fail if not connected - reconnection will handle retries
   }, [isConnected]);
 
   const on = useCallback(<T,>(event: string, handler: (data: T) => void) => {

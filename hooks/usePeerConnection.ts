@@ -55,21 +55,22 @@ export function usePeerConnection({ localStream, socket }: UsePeerConnectionProp
 
     // Handle remote tracks
     pc.ontrack = (event) => {
-      console.log('📥 Received remote track from', peerId);
       const [remoteStream] = event.streams;
-      remoteStreamsRef.current.set(peerId, remoteStream);
-      
-      // Trigger re-render by dispatching custom event
-      window.dispatchEvent(new CustomEvent('remote-stream-added', {
-        detail: { peerId, stream: remoteStream }
-      }));
+      if (remoteStream) {
+        remoteStreamsRef.current.set(peerId, remoteStream);
+        
+        // Trigger re-render by dispatching custom event
+        window.dispatchEvent(new CustomEvent('remote-stream-added', {
+          detail: { peerId, stream: remoteStream }
+        }));
+      }
     };
 
     // Handle connection state changes
     pc.onconnectionstatechange = () => {
-      console.log(`🔗 Connection with ${peerId}:`, pc.connectionState);
+      const state = pc.connectionState;
       
-      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+      if (state === 'disconnected' || state === 'failed' || state === 'closed') {
         closePeer(peerId);
       }
     };
@@ -100,10 +101,11 @@ export function usePeerConnection({ localStream, socket }: UsePeerConnectionProp
       if (socket) {
         socket.emit('offer', { to: peerId, offer });
       }
-      
-      console.log('📤 Sent offer to', peerId);
     } catch (error) {
-      console.error('Error creating offer:', error);
+      // Log error but don't expose to user unless critical
+      if (error instanceof Error && error.name !== 'InvalidStateError') {
+        console.error('Error creating offer:', error);
+      }
       pendingOffersRef.current.delete(peerId);
     }
   }, [createPeerConnection, socket]);
@@ -134,9 +136,10 @@ export function usePeerConnection({ localStream, socket }: UsePeerConnectionProp
       }
       
       pendingOffersRef.current.delete(peerId);
-      console.log('📤 Sent answer to', peerId);
     } catch (error) {
-      console.error('Error handling offer:', error);
+      if (error instanceof Error && error.name !== 'InvalidStateError') {
+        console.error('Error handling offer:', error);
+      }
       pendingOffersRef.current.delete(peerId);
     }
   }, [createPeerConnection, socket]);
@@ -144,12 +147,13 @@ export function usePeerConnection({ localStream, socket }: UsePeerConnectionProp
   const handleAnswer = useCallback(async (peerId: string, answer: RTCSessionDescriptionInit) => {
     try {
       const pc = peersRef.current.get(peerId);
-      if (pc) {
+      if (pc && pc.signalingState !== 'closed') {
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
-        console.log('✅ Set remote description (answer) from', peerId);
       }
     } catch (error) {
-      console.error('Error handling answer:', error);
+      if (error instanceof Error && error.name !== 'InvalidStateError') {
+        console.error('Error handling answer:', error);
+      }
     }
   }, []);
 
@@ -189,12 +193,12 @@ export function usePeerConnection({ localStream, socket }: UsePeerConnectionProp
 
     socket.on('user-joined', (data: { participant: Participant }) => {
       // Create offer for new participant
-      console.log('👤 User joined:', data.participant.id);
-      void createOffer(data.participant.id);
+      if (!pendingOffersRef.current.has(data.participant.id)) {
+        void createOffer(data.participant.id);
+      }
     });
 
     socket.on('user-left', (data: { userId: string }) => {
-      console.log('👋 User left:', data.userId);
       closePeer(data.userId);
     });
 
