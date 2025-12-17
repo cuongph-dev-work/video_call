@@ -161,7 +161,7 @@ export function PreJoinScreen({
                                     className={cn(
                                         "group/btn relative flex items-center justify-center size-12 rounded-xl transition-all duration-300 shadow-lg cursor-pointer",
                                         audioEnabled
-                                            ? "bg-blue-600hover:bg-blue-500 text-white border border-white/5"
+                                            ? "bg-blue-600 hover:bg-blue-500 text-white border border-white/5"
                                             : "bg-red-600 hover:bg-red-500 text-white shadow-red-500/20"
                                     )}
                                     title={audioEnabled ? 'Tắt tiếng' : 'Bật tiếng'}
@@ -174,7 +174,7 @@ export function PreJoinScreen({
                                     className={cn(
                                         "group/btn relative flex items-center justify-center size-12 rounded-xl transition-all duration-300 shadow-lg cursor-pointer",
                                         videoEnabled
-                                            ? "bg-blue-600hover:bg-blue-500 text-white border border-white/5"
+                                            ? "bg-blue-600 hover:bg-blue-500 text-white border border-white/5"
                                             : "bg-red-600 hover:bg-red-500 text-white shadow-red-500/20"
                                     )}
                                     title="Bật/tắt camera"
