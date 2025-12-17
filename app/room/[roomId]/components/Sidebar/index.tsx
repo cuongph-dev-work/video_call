@@ -1,6 +1,7 @@
 import React from 'react';
 import { ParticipantsPanel } from './ParticipantsPanel';
 import { ChatPanel } from './ChatPanel';
+import { useResponsive } from '@/hooks/useResponsive';
 
 interface Participant {
     id: string;
@@ -34,8 +35,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onSendMessage,
     onAttachFile,
 }) => {
+    const { isMobile } = useResponsive();
+
+    if (isMobile) {
+        // Mobile: Hidden by default, can be toggled
+        return null;
+    }
+
     return (
-        <aside className="w-[22rem] bg-[#1c1f2e] rounded-3xl flex flex-col border border-white/5 shadow-2xl overflow-hidden shrink-0">
+        <aside className="w-full sm:w-80 lg:w-[22rem] bg-[#1c1f2e] rounded-xl lg:rounded-3xl flex flex-col border border-white/5 shadow-2xl overflow-hidden shrink-0">
             <ParticipantsPanel
                 participants={participants}
                 onAddParticipant={onAddParticipant}

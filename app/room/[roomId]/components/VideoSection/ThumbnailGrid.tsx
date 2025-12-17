@@ -1,6 +1,8 @@
 import React from 'react';
 import { Users } from 'lucide-react';
 import { VideoThumbnail } from './VideoThumbnail';
+import { useResponsive } from '@/hooks/useResponsive';
+import { getGridCols } from '@/lib/responsive';
 
 interface Participant {
     id: string;
@@ -15,6 +17,9 @@ interface ThumbnailGridProps {
 }
 
 export const ThumbnailGrid: React.FC<ThumbnailGridProps> = ({ participants }) => {
+    const { isMobile, isTablet } = useResponsive();
+    const cols = getGridCols(participants.length, isMobile, isTablet);
+
     // Show empty state when no participants
     if (participants.length === 0) {
         return (
@@ -35,7 +40,13 @@ export const ThumbnailGrid: React.FC<ThumbnailGridProps> = ({ participants }) =>
     }
 
     return (
-        <div className="h-44 shrink-0 grid grid-cols-4 gap-4">
+        <div className={`h-44 shrink-0 grid gap-2 sm:gap-4 ${
+            isMobile 
+                ? 'grid-cols-1' 
+                : isTablet 
+                ? `grid-cols-${cols}` 
+                : `grid-cols-${cols}`
+        }`}>
             {participants.map((participant) => (
                 <VideoThumbnail
                     key={participant.id}

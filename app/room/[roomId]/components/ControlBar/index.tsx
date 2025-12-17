@@ -40,8 +40,8 @@ export const ControlBar: React.FC<ControlBarProps> = ({
     onEndCall,
 }) => {
     return (
-        <div className="h-20 flex items-center justify-center shrink-0 z-20 relative mt-2 bg-[#13161f] rounded-2xl">
-            <div className="flex items-center gap-6">
+        <div className="h-16 sm:h-20 flex items-center justify-center shrink-0 z-20 relative mt-2 bg-[#13161f] rounded-xl sm:rounded-2xl px-2 sm:px-0">
+            <div className="flex items-center gap-2 sm:gap-4 md:gap-6 flex-wrap justify-center">
                 <ControlButton
                     icon={audioEnabled ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
                     variant={audioEnabled ? "primary" : "danger"}
