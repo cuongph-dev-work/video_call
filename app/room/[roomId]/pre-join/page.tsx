@@ -8,6 +8,7 @@ import { Video, Mic, MicOff, VideoOff, Volume2, User, ShieldCheck, MonitorUp } f
 import { useLocalStream } from '@/hooks/useLocalStream';
 import { displayNameSchema, type DisplayNameFormData } from '@/lib/validations';
 import { usePreferencesStore } from '@/store/usePreferencesStore';
+import { cn } from '@/lib/utils';
 
 export default function PreJoinPage() {
     const params = useParams();
@@ -141,12 +142,28 @@ export default function PreJoinPage() {
                             {/* Mic Indicator */}
                             {audioEnabled && (
                                 <div className="absolute top-5 left-5 flex gap-3">
-                                    <div className="bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-lg flex items-center gap-2.5">
-                                        <div className="flex items-end gap-1 h-4 w-4 justify-center">
-                                            <div className="w-1 bg-green-400 rounded-full h-1 animate-pulse"></div>
-                                            <div className="w-1 bg-green-400 rounded-full h-2 animate-pulse" style={{ animationDelay: '0.1s' }}></div>
-                                            <div className="w-1 bg-green-400 rounded-full h-3 animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                                    <div className="bg-[#1e2139]/95 backdrop-blur-md border border-white/10 px-4 py-2.5 rounded-xl flex items-center gap-3 shadow-xl">
+                                        <Volume2 className="w-5 h-5 text-emerald-400" />
+                                        <div className="flex items-center gap-0.5 h-6">
+                                            {Array.from({ length: 25 }).map((_, i) => {
+                                                // Create a visual wave effect or random levels
+                                                const isActive = i < 8; // Static for now, can be dynamic later
+                                                return (
+                                                    <div
+                                                        key={i}
+                                                        className={cn(
+                                                            "w-1 rounded-sm transition-all duration-150",
+                                                            isActive
+                                                                ? "bg-emerald-400 h-full"
+                                                                : "bg-gray-700/60 h-2"
+                                                        )}
+                                                    />
+                                                );
+                                            })}
                                         </div>
+                                        <span className="text-sm font-semibold text-white tabular-nums">
+                                            32%
+                                        </span>
                                     </div>
                                 </div>
                             )}
@@ -155,10 +172,12 @@ export default function PreJoinPage() {
                             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-black/50 backdrop-blur-xl border border-white/10 p-2 rounded-2xl shadow-xl">
                                 <button
                                     onClick={toggleAudio}
-                                    className={`group/btn relative flex items-center justify-center size-12 rounded-xl transition-all duration-300 shadow-lg cursor-pointer ${audioEnabled
-                                        ? 'bg-white/10 hover:bg-white/20 text-white border border-white/5'
-                                        : 'bg-red-600 hover:bg-red-500 text-white shadow-red-500/20'
-                                        }`}
+                                    className={cn(
+                                        "group/btn relative flex items-center justify-center size-12 rounded-xl transition-all duration-300 shadow-lg cursor-pointer",
+                                        audioEnabled
+                                            ? "bg-white/10 hover:bg-white/20 text-white border border-white/5"
+                                            : "bg-red-600 hover:bg-red-500 text-white shadow-red-500/20"
+                                    )}
                                     title={audioEnabled ? 'Tắt tiếng' : 'Bật tiếng'}
                                 >
                                     {audioEnabled ? <Mic className="w-6 h-6" /> : <MicOff className="w-6 h-6" />}
@@ -166,10 +185,12 @@ export default function PreJoinPage() {
 
                                 <button
                                     onClick={toggleVideo}
-                                    className={`group/btn relative flex items-center justify-center size-12 rounded-xl transition-all duration-300 shadow-lg cursor-pointer ${videoEnabled
-                                        ? 'bg-white/10 hover:bg-white/20 text-white border border-white/5'
-                                        : 'bg-red-600 hover:bg-red-500 text-white shadow-red-500/20'
-                                        }`}
+                                    className={cn(
+                                        "group/btn relative flex items-center justify-center size-12 rounded-xl transition-all duration-300 shadow-lg cursor-pointer",
+                                        videoEnabled
+                                            ? "bg-white/10 hover:bg-white/20 text-white border border-white/5"
+                                            : "bg-red-600 hover:bg-red-500 text-white shadow-red-500/20"
+                                    )}
                                     title="Bật/tắt camera"
                                 >
                                     {videoEnabled ? <Video className="w-6 h-6" /> : <VideoOff className="w-6 h-6" />}
@@ -221,10 +242,12 @@ export default function PreJoinPage() {
                                     <input
                                         type="text"
                                         {...register('displayName')}
-                                        className={`w-full bg-[#222730] border text-white rounded-xl h-12 pl-12 pr-4 focus:ring-2 transition-all outline-none font-medium placeholder:text-gray-600 shadow-sm ${errors.displayName
-                                            ? 'border-red-500 focus:ring-red-500/50 focus:border-red-500'
-                                            : 'border-[#313845] focus:ring-blue-500/50 focus:border-blue-500'
-                                            }`}
+                                        className={cn(
+                                            "w-full bg-[#222730] border text-white rounded-xl h-12 pl-12 pr-4 focus:ring-2 transition-all outline-none font-medium placeholder:text-gray-600 shadow-sm",
+                                            errors.displayName
+                                                ? "border-red-500 focus:ring-red-500/50 focus:border-red-500"
+                                                : "border-[#313845] focus:ring-blue-500/50 focus:border-blue-500"
+                                        )}
                                         placeholder="Nhập tên của bạn..."
                                         maxLength={30}
                                     />
