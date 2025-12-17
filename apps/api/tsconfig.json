@@ -1,0 +1,52 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": [
+      "ES2023"
+    ],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "composite": false,
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "@video-call/types": [
+        "../../packages/types/src"
+      ],
+      "@video-call/utils": [
+        "../../packages/utils/src"
+      ],
+      "@prisma": [
+        "prisma/generated"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*",
+    "prisma/generated"
+  ],
+  "exclude": [
+    "node_modules",
+    "test",
+    "dist",
+    "**/*.spec.ts",
+    "**/*.test.ts"
+  ],
+  "references": [
+    {
+      "path": "../../packages/types"
+    },
+    {
+      "path": "../../packages/utils"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+    "name": "@video-call/config",
+    "version": "0.0.1",
+    "private": true,
+    "main": "./index.js",
+    "files": [
+        "eslint-preset.js",
+        "tailwind.config.js",
+        "tsconfig.json"
+    ]
+}

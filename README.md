@@ -1,37 +1,94 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Video Call Application
+
+A real-time video calling application built with WebRTC, NestJS, and Next.js in a Turborepo monorepo.
+
+## Tech Stack
+
+- **Frontend**: Next.js 15+ (App Router), React, Tailwind CSS, shadcn/ui
+- **Backend**: NestJS, Socket.io, Redis
+- **Real-time**: WebRTC, Socket.io
+- **Database**: PostgreSQL (users, meetings), Redis (real-time state)
+- **Monorepo**: Turborepo + pnpm
+
+## Project Structure
+
+```
+.
+├── apps/
+│   ├── web/           # Next.js frontend
+│   └── api/           # NestJS backend
+├── packages/
+│   ├── ui/            # Shared UI components
+│   ├── types/         # Shared TypeScript types
+│   ├── config/        # Shared configurations
+│   └── utils/         # Shared utilities
+├── docs/              # Documentation
+└── docker-compose.yml # Infrastructure (Redis)
+```
+
+## Prerequisites
+
+- Node.js >= 18.0.0
+- pnpm >= 8.0.0
+- Docker (for Redis)
 
 ## Getting Started
 
-First, run the development server:
+### 1. Install dependencies
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Start infrastructure
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+docker-compose up -d
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Run development servers
 
-## Learn More
+```bash
+pnpm dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+This will start:
+- Frontend: http://localhost:3000
+- Backend: http://localhost:4000
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Available Commands
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+pnpm dev        # Start all apps in development mode
+pnpm build      # Build all apps
+pnpm lint       # Lint all apps
+pnpm clean      # Clean build artifacts
+pnpm format     # Format code with Prettier
+```
 
-## Deploy on Vercel
+## Environment Variables
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+See individual app README files for required environment variables:
+- `apps/web/.env.local`
+- `apps/api/.env`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-# video_call
+## Documentation
+
+- [Features Specification](./docs/features-specification.md)
+- [Tech Stack](./docs/tech-stack.md)
+- [Implementation Plan](./docs/implementation-plan.md)
+- [API Contracts](./docs/api-contracts.md)
+- [Component Specifications](./docs/component-specifications.md)
+- [Database Schema](./docs/database-schema.md)
+
+## Development Workflow
+
+1. Create a new branch for your feature
+2. Make changes in the appropriate app/package
+3. Test locally with `pnpm dev`
+4. Build to verify: `pnpm build`
+5. Submit pull request
+
+## License
+
+MIT

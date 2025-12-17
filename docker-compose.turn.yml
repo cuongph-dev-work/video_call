@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  coturn:
+    image: coturn/coturn:latest
+    container_name: video-call-turn
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "49152-65535:49152-65535/udp"
+    environment:
+      - TURN_USERNAME=${TURN_USERNAME:-turnuser}
+      - TURN_PASSWORD=${TURN_PASSWORD:-turnpass}
+    volumes:
+      - ./turnserver.conf:/etc/turnserver.conf:ro
+    command: |
+      -n
+      --log-file=stdout
+      --listening-ip=0.0.0.0
+      --external-ip=$$(detect-external-ip)
+      --min-port=49152
+      --max-port=65535
+      --user=${TURN_USERNAME:-turnuser}:${TURN_PASSWORD:-turnpass}
+      --realm=video-call
+      --no-cli
+      --no-tls
+      --no-dtls
+    networks:
+      - video-call-network
+    restart: unless-stopped
+
+networks:
+  video-call-network:
+    driver: bridge
+
