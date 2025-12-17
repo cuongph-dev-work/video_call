@@ -5,10 +5,10 @@ import { useParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { valibotResolver } from '@hookform/resolvers/valibot';
 import { Video, Mic, MicOff, VideoOff, Volume2, User, ShieldCheck, MonitorUp } from 'lucide-react';
-import { useLocalStream } from '@/hooks/useLocalStream';
-import { displayNameSchema, type DisplayNameFormData } from '@/lib/validations';
-import { usePreferencesStore } from '@/store/usePreferencesStore';
-import { cn } from '@/lib/utils';
+import { useLocalStream } from '@/domains/media/hooks/useLocalStream';
+import { displayNameSchema, type DisplayNameFormData } from '@/shared/lib/validations';
+import { usePreferencesStore } from '@/shared/stores/usePreferencesStore';
+import { cn } from '@/shared/lib/utils';
 
 export default function PreJoinPage() {
     const params = useParams();

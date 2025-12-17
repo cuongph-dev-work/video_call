@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Clock, UserCheck, X } from 'lucide-react';
-import { useSocket } from '@/hooks/useSocket';
+import { useSocket } from '@/shared/hooks/useSocket';
 
 export default function WaitingRoomPage() {
     const params = useParams();

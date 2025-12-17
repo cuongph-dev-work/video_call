@@ -3,27 +3,27 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { useSocket } from '@/hooks/useSocket';
-import { useLocalStream } from '@/hooks/useLocalStream';
-import { usePeerConnection } from '@/hooks/usePeerConnection';
-import { useScreenShare } from '@/hooks/useScreenShare';
-import { useMediaRecorder } from '@/hooks/useMediaRecorder';
-import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
-import { useChatStore } from '@/store/useChatStore';
+import { useSocket } from '@/shared/hooks/useSocket';
+import { useLocalStream } from '@/domains/media/hooks/useLocalStream';
+import { usePeerConnection } from '@/shared/hooks/usePeerConnection';
+import { useScreenShare } from '@/domains/media/hooks/useScreenShare';
+import { useMediaRecorder } from '@/domains/media/hooks/useMediaRecorder';
+import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
+import { useChatStore } from '@/domains/chat/stores/useChatStore';
 
 // New components
-import { RoomHeader } from './components/RoomHeader';
-import { VideoSection } from './components/VideoSection';
-import { ControlBar } from './components/ControlBar';
-import { Sidebar } from './components/Sidebar';
-import { WaitingUsersNotification } from '@/components/WaitingUsersNotification';
-import { RecordingIndicator } from '@/components/RecordingIndicator';
-import { KeyboardShortcutsHelp } from '@/components/KeyboardShortcutsHelp';
+import { RoomHeader } from '@/domains/room/components/RoomHeader';
+import { VideoSection } from '@/domains/room/components/VideoSection';
+import { ControlBar } from '@/domains/room/components/ControlBar';
+import { Sidebar } from '@/domains/room/components/Sidebar';
+import { WaitingUsersNotification } from '@/shared/components/WaitingUsersNotification';
+import { RecordingIndicator } from '@/domains/media/components/RecordingIndicator';
+import { KeyboardShortcutsHelp } from '@/shared/components/KeyboardShortcutsHelp';
 import type { WaitingUser } from '../../../../../packages/types/src/waiting-room';
 
 // Lazy load RoomSettingsModal
 const RoomSettingsModal = dynamic(
-    () => import('@/components/RoomSettings').then((mod) => mod.RoomSettingsModal),
+    () => import('@/domains/settings/components').then((mod) => mod.RoomSettingsModal),
     { ssr: false }
 );
 
