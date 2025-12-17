@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { generateMeetingCode } from '@video-call/utils';
 import {
   Video,
   Home,
@@ -61,7 +62,20 @@ const QuickAction = ({ icon, label, href = "#", onClick }: QuickActionProps) => 
 export default function HomePage() {
   const router = useRouter();
   const [roomCode, setRoomCode] = useState('');
+  // Start with default to avoid hydration mismatch
+  const [username, setUsername] = useState('Khách');
+  const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Load username from localStorage after mount to avoid hydration mismatch
+  // This pattern is necessary for Next.js SSR hydration safety
+  useEffect(() => {
+    setMounted(true);
+    const savedUsername = localStorage.getItem('username');
+    if (savedUsername) {
+      setUsername(savedUsername);
+    }
+  }, []);
 
   // Update time every second
   useEffect(() => {
@@ -86,22 +100,60 @@ export default function HomePage() {
     month: 'short'
   });
 
+  // Validate and format room code: XX-XXXX-XX
+  const validateAndFormatRoomCode = useCallback((code: string): string | null => {
+    // Remove spaces and hyphens, convert to uppercase
+    const cleaned = code.replace(/[\s-]/g, '').toUpperCase();
+
+    // Check if it's 8 letters
+    if (!/^[A-Z]{8}$/.test(cleaned)) {
+      return null;
+    }
+
+    // Format: XX-XXXX-XX
+    return `${cleaned.slice(0, 2)}-${cleaned.slice(2, 6)}-${cleaned.slice(6, 8)}`;
+  }, []);
+
   const handleNewMeeting = useCallback(() => {
-    const roomId = 'room-' + Math.random().toString(36).substring(2, 9);
-    router.push(`/room/${roomId}`);
+    // Generate Google Meet style room code: XX-XXXX-XX
+    const roomId = generateMeetingCode();
+    // Navigate to pre-join page first
+    router.push(`/room/${roomId}/pre-join`);
   }, [router]);
 
   const handleJoinMeeting = useCallback(() => {
-    if (roomCode.trim()) {
-      router.push(`/room/${roomCode.trim()}`);
+    const formatted = validateAndFormatRoomCode(roomCode);
+    if (formatted) {
+      // Navigate to pre-join page
+      router.push(`/room/${formatted}/pre-join`);
+    } else {
+      // Show error - in production use toast/notification
+      alert('Invalid room code. Please enter 8 letters (e.g., AB-CDEF-GH)');
     }
-  }, [roomCode, router]);
+  }, [roomCode, router, validateAndFormatRoomCode]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       handleJoinMeeting();
     }
   }, [handleJoinMeeting]);
+
+  // Auto-format room code while typing
+  const handleRoomCodeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.toUpperCase();
+    // Remove non-letters
+    value = value.replace(/[^A-Z]/g, '');
+    // Auto-add hyphens
+    if (value.length > 2 && value[2] !== '-') {
+      value = value.slice(0, 2) + '-' + value.slice(2);
+    }
+    if (value.length > 7 && value[7] !== '-') {
+      value = value.slice(0, 7) + '-' + value.slice(7);
+    }
+    // Max length: XX-XXXX-XX (10 chars with hyphens)
+    value = value.slice(0, 10);
+    setRoomCode(value);
+  }, []);
 
   return (
     <div className="flex h-screen bg-[#0b0e11] text-white font-sans overflow-hidden">
@@ -119,12 +171,12 @@ export default function HomePage() {
         </nav>
 
         <div className="mt-auto flex flex-col gap-6">
-          <button className="h-10 w-10 rounded-full overflow-hidden border-2 border-[#232936] hover:border-[#3b82f6] transition-all">
-            <img
-              alt="User Profile"
-              className="h-full w-full object-cover"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuBf4jNLfHvYqgMO02pMaLHmtMbBnu1NpRvMbeSSRwBTSMRFHQ0JNplvezEcDVU_4lB5MO7RtwU2i_X_eKy7xC2YWcMkbglQGopYk_DViMNFSSXaDiiTzL7Z97KAGRpqUAN0FzoB3dg6SIGxtIDF9whfyQEwpw6jx42AlDsKVsmZx0tU6u2nvZ3fO-MTS8U2OsxWBKgNAFRNCUMIfy9kqF2NcaDyxNGiU_CKY8Vt6n2DCV7epvejuuosOm--isQAoyN4Oo1N2QtZJcw"
-            />
+          {/* User Avatar */}
+          <button
+            className="h-10 w-10 rounded-full overflow-hidden border-2 border-[#232936] hover:border-[#3b82f6] transition-all flex items-center justify-center bg-gradient-to-br from-[#3b82f6] to-purple-500 text-white font-semibold text-sm"
+            aria-label="User Profile"
+          >
+            {mounted ? username.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase() : 'K'}
           </button>
         </div>
       </aside>
@@ -152,14 +204,14 @@ export default function HomePage() {
         <header className="w-full h-20 flex items-center justify-between px-8 z-10 hidden sm:flex shrink-0">
           <div>
             <h2 className="text-xl font-semibold text-white">Tổng quan</h2>
-            <p className="text-sm text-gray-400">Chào mừng trở lại, Alexander</p>
+            <p className="text-sm text-gray-400">Chào mừng trở lại, {mounted ? username : 'Khách'}</p>
           </div>
           <div className="flex items-center gap-6">
             <div className="flex flex-col items-end">
               <span className="text-sm font-medium text-white">{formattedTime}</span>
               <span className="text-xs text-gray-400">{formattedDate}</span>
             </div>
-            <div className="h-8 w-[1px] bg-[#232936]" />
+            <div className="h-8 w-px bg-[#232936]" />
             <button className="flex items-center gap-2 bg-[#161b22] border border-[#232936] hover:border-gray-500 rounded-lg px-3 py-2 text-sm text-gray-300 transition-colors">
               <HelpCircle className="w-5 h-5" />
               <span>Trợ giúp</span>
@@ -200,12 +252,13 @@ export default function HomePage() {
                       <Keyboard className="w-5 h-5 text-gray-500 group-focus-within:text-[#3b82f6] transition-colors" />
                     </div>
                     <input
-                      className="block w-full h-14 pl-10 pr-24 bg-[#161b22] border border-[#232936] rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-[#3b82f6] focus:border-transparent transition-all focus:outline-none"
-                      placeholder="Nhập mã họp"
+                      className="block w-full h-14 pl-10 pr-24 bg-[#161b22] border border-[#232936] rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-[#3b82f6] focus:border-transparent transition-all focus:outline-none uppercase"
+                      placeholder="e.g., AB-CDEF-GH"
                       type="text"
                       value={roomCode}
-                      onChange={(e) => setRoomCode(e.target.value)}
+                      onChange={handleRoomCodeChange}
                       onKeyDown={handleKeyDown}
+                      maxLength={10}
                     />
                     <button
                       className="absolute right-2 top-2 bottom-2 px-4 bg-[#1f2937] hover:bg-gray-600 text-gray-300 hover:text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

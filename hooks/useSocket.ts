@@ -3,7 +3,18 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 
-export function useSocket() {
+interface UseSocketReturn {
+  getSocket: () => Socket | null;
+  isConnected: boolean;
+  isReconnecting: boolean;
+  error: string | null;
+  emit: <T>(event: string, data: T) => void;
+  on: <T>(event: string, handler: (data: T) => void) => void;
+  off: (event: string) => void;
+  reconnect: () => void;
+}
+
+export function useSocket(): UseSocketReturn {
   const [isConnected, setIsConnected] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);

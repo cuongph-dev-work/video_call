@@ -269,21 +269,17 @@ export class BackgroundProcessor {
   /**
    * Check if processor is supported in current browser
    */
-  static async isSupported(): Promise<boolean> {
+  static isSupported(): boolean {
     if (typeof window === 'undefined') return false;
 
+    // Check for required browser APIs
     const hasCanvasSupport = !!(
       window.HTMLCanvasElement &&
       typeof window.HTMLCanvasElement.prototype.captureStream === 'function'
     );
 
-    try {
-      const SelfieSegmentation = await getSelfieSegmentation();
-      const hasRealMediaPipe = SelfieSegmentation.name !== 'MockSelfieSegmentation';
-      return hasCanvasSupport && hasRealMediaPipe;
-    } catch {
-      return false;
-    }
+    // Basic check - actual MediaPipe availability will be verified during initialization
+    return hasCanvasSupport;
   }
 }
 

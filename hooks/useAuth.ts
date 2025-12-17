@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 export interface User {
   id: string;
@@ -10,25 +10,25 @@ export interface User {
   createdAt: number;
 }
 
-export function useAuth() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+function initializeUser(): User | null {
+  const token = localStorage.getItem('token');
+  const userStr = localStorage.getItem('user');
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    const userStr = localStorage.getItem('user');
-
-    if (token && userStr) {
-      try {
-        const userData = JSON.parse(userStr);
-        setUser(userData);
-      } catch {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-      }
+  if (token && userStr) {
+    try {
+      return JSON.parse(userStr);
+    } catch {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      return null;
     }
-    setLoading(false);
-  }, []);
+  }
+  return null;
+}
+
+export function useAuth() {
+  const [user, setUser] = useState<User | null>(initializeUser);
+  const loading = false;
 
   const login = (token: string, userData: User) => {
     localStorage.setItem('token', token);

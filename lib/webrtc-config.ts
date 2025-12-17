@@ -1,11 +1,13 @@
 // WebRTC Configuration
+import { ICE_SERVERS_DEV, ICE_SERVERS_PROD } from '@video-call/types';
 
 const getIceServers = (): RTCIceServer[] => {
-  const servers: RTCIceServer[] = [
-    {
-      urls: process.env.NEXT_PUBLIC_STUN_SERVER || 'stun:stun.l.google.com:19302',
-    },
-  ];
+  // Use production servers if in production, otherwise use dev servers
+  const baseServers = process.env.NODE_ENV === 'production' 
+    ? ICE_SERVERS_PROD 
+    : ICE_SERVERS_DEV;
+
+  const servers: RTCIceServer[] = [...baseServers];
 
   // Add TURN server if configured
   const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;

@@ -1,6 +1,9 @@
+'use client';
+
 import React, { useState, useRef, useEffect } from 'react';
-import { Paperclip, Send, ChevronUp, ChevronDown } from 'lucide-react';
+import { Send, Paperclip, ChevronUp, ChevronDown } from 'lucide-react';
 import { ChatMessage } from './ChatMessage';
+import { useChatStore } from '@/store/useChatStore';
 
 interface Message {
     id: string;
@@ -26,6 +29,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     const [inputValue, setInputValue] = useState('');
     const [collapsed, setCollapsed] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const markAsRead = useChatStore(state => state.markAsRead);
+
+    // Mark messages as read when chat panel is visible
+    useEffect(() => {
+        markAsRead();
+    }, [markAsRead]);
 
     useEffect(() => {
         if (scrollRef.current) {
@@ -71,8 +80,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                         <button
                             onClick={() => setActiveTab('group')}
                             className={`px-4 py-1 rounded-md text-xs font-medium transition-all ${activeTab === 'group'
-                                    ? 'bg-blue-600 text-white shadow-sm'
-                                    : 'text-gray-400 hover:text-white'
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'text-gray-400 hover:text-white'
                                 }`}
                         >
                             Group
@@ -80,8 +89,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                         <button
                             onClick={() => setActiveTab('personal')}
                             className={`px-4 py-1 rounded-md text-xs font-medium transition-all ${activeTab === 'personal'
-                                    ? 'bg-blue-600 text-white shadow-sm'
-                                    : 'text-gray-400 hover:text-white'
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'text-gray-400 hover:text-white'
                                 }`}
                         >
                             Personal

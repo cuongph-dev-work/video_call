@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import { UserPlus, Check, X, Users } from 'lucide-react';
-import type { WaitingUser } from '../../../packages/types/src/waiting-room';
+import Image from 'next/image';
+import { Check, X, Users } from 'lucide-react';
+import type { WaitingUser } from '@video-call/types';
 
 interface WaitingUsersNotificationProps {
     waitingUsers: WaitingUser[];
@@ -83,9 +84,11 @@ const WaitingUserItem: React.FC<WaitingUserItemProps> = ({ user, onAdmit, onReje
         <div className="flex items-center justify-between p-4 border-b border-[#2e3445] hover:bg-[#2a3042] transition-colors">
             <div className="flex items-center gap-3 flex-1 min-w-0">
                 {user.avatar ? (
-                    <img
+                    <Image
                         src={user.avatar}
                         alt={user.displayName}
+                        width={40}
+                        height={40}
                         className="w-10 h-10 rounded-full object-cover"
                     />
                 ) : (

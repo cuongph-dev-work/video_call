@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 import {
     Mic,
@@ -11,6 +13,7 @@ import {
     PhoneOff
 } from 'lucide-react';
 import { ControlButton } from './ControlButton';
+import { useChatStore } from '@/store/useChatStore';
 
 interface ControlBarProps {
     audioEnabled: boolean;
@@ -39,6 +42,8 @@ export const ControlBar: React.FC<ControlBarProps> = ({
     onMoreOptions,
     onEndCall,
 }) => {
+    const unreadCount = useChatStore(state => state.unreadCount);
+
     return (
         <div className="h-16 sm:h-20 flex items-center justify-center shrink-0 z-20 relative mt-2 bg-[#13161f] rounded-xl sm:rounded-2xl px-2 sm:px-0">
             <div className="flex items-center gap-2 sm:gap-4 md:gap-6 flex-wrap justify-center">
@@ -79,6 +84,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
                     <ControlButton
                         icon={<MessageSquare className="w-5 h-5" />}
                         onClick={onToggleChat}
+                        badge={unreadCount}
                     />
                 )}
 

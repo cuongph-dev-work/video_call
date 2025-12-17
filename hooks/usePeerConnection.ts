@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
-import { rtcConfig } from '@/lib/webrtc-config';
+import { ICE_SERVERS_DEV } from '@video-call/types';
 
 interface UsePeerConnectionProps {
   localStream: MediaStream | null;
@@ -34,7 +34,9 @@ export function usePeerConnection({ localStream, socket }: UsePeerConnectionProp
   }, []);
 
   const createPeerConnection = useCallback((peerId: string): RTCPeerConnection => {
-    const pc = new RTCPeerConnection(rtcConfig);
+    const pc = new RTCPeerConnection({
+      iceServers: ICE_SERVERS_DEV  // FREE!
+    });
 
     // Add local tracks to peer connection
     if (localStream) {

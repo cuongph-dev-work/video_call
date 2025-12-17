@@ -6,7 +6,7 @@ interface ControlButtonProps {
     active?: boolean;
     variant?: 'primary' | 'secondary' | 'danger';
     onClick?: () => void;
-    badge?: boolean;
+    badge?: boolean | number; // Support both boolean and number
 }
 
 export const ControlButton: React.FC<ControlButtonProps> = ({
@@ -29,6 +29,8 @@ export const ControlButton: React.FC<ControlButtonProps> = ({
             : 'bg-[#2c303f] text-blue-400 hover:bg-slate-700 border border-white/5';
     };
 
+    const showBadge = typeof badge === 'number' ? badge > 0 : badge;
+
     return (
         <button
             onClick={onClick}
@@ -36,8 +38,15 @@ export const ControlButton: React.FC<ControlButtonProps> = ({
                 } rounded-full transition-all ${getButtonStyles()} relative`}
             aria-label={label}
         >
-            {badge && variant === 'secondary' && (
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-[#13161f]" />
+            {/* Badge display */}
+            {showBadge && (
+                typeof badge === 'number' ? (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 min-w-[20px] px-1 flex items-center justify-center font-semibold shadow-lg">
+                        {badge > 9 ? '9+' : badge}
+                    </span>
+                ) : (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-[#13161f]" />
+                )
             )}
             {icon}
             {label && <span className="ml-2 font-semibold text-sm">{label}</span>}

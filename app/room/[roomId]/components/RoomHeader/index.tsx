@@ -1,5 +1,5 @@
 import React from 'react';
-import { Video, MoreVertical, Settings } from 'lucide-react';
+import { Video, MoreVertical, Settings, Keyboard } from 'lucide-react';
 import Image from 'next/image';
 import { MeetingInfo } from './MeetingInfo';
 import { ParticipantStack } from './ParticipantStack';
@@ -22,6 +22,7 @@ interface RoomHeaderProps {
     };
     onMoreOptions?: () => void;
     onOpenSettings?: () => void;
+    onShowHelp?: () => void;
 }
 
 export const RoomHeader: React.FC<RoomHeaderProps> = ({
@@ -33,6 +34,7 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
     currentUser,
     onMoreOptions,
     onOpenSettings,
+    onShowHelp,
 }) => {
     return (
         <header className="h-20 flex items-center justify-between px-6 bg-[#13161f] shrink-0 z-10">
@@ -73,6 +75,17 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
                         )}
                     </div>
                 </div>
+
+                {onShowHelp && (
+                    <button
+                        onClick={onShowHelp}
+                        className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-[#1c1f2e] rounded-lg"
+                        aria-label="Phím tắt"
+                        title="Phím tắt (Nhấn ?)"
+                    >
+                        <Keyboard className="w-5 h-5" />
+                    </button>
+                )}
 
                 {onOpenSettings && (
                     <button

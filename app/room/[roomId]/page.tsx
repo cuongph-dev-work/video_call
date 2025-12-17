@@ -8,6 +8,7 @@ import { useLocalStream } from '@/hooks/useLocalStream';
 import { usePeerConnection } from '@/hooks/usePeerConnection';
 import { useScreenShare } from '@/hooks/useScreenShare';
 import { useMediaRecorder } from '@/hooks/useMediaRecorder';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useChatStore } from '@/store/useChatStore';
 
 // New components
@@ -17,6 +18,7 @@ import { ControlBar } from './components/ControlBar';
 import { Sidebar } from './components/Sidebar';
 import { WaitingUsersNotification } from '@/components/WaitingUsersNotification';
 import { RecordingIndicator } from '@/components/RecordingIndicator';
+import { KeyboardShortcutsHelp } from '@/components/KeyboardShortcutsHelp';
 import type { WaitingUser } from '../../../../../packages/types/src/waiting-room';
 
 // Lazy load RoomSettingsModal
@@ -73,10 +75,11 @@ export default function RoomPage() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [waitingUsers, setWaitingUsers] = useState<WaitingUser[]>([]);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+    const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
 
     // Use useState with useEffect to avoid hydration mismatch
     const [displayName, setDisplayName] = useState('Guest');
-    
+
     // Set random name only on client side after mount
     useEffect(() => {
         setDisplayName('User ' + Math.floor(Math.random() * 1000));
@@ -276,6 +279,17 @@ export default function RoomPage() {
         }
     }, [getSocket, roomId]);
 
+    // Keyboard shortcuts - must be after all handlers
+    useKeyboardShortcuts({
+        onToggleMic: handleToggleAudio,
+        onToggleVideo: handleToggleVideo,
+        onToggleScreenShare: handleToggleScreenShare,
+        onToggleRecording: isRecording ? stopRecording : startRecording,
+        onEndCall: handleEndCall,
+        onShowHelp: () => setShowShortcutsHelp(prev => !prev),
+        enabled: true,
+    });
+
     // Prepare participants data for components (deduplicate)
     const participantsForSidebar: Participant[] = useMemo(() => {
         const socketId = getSocket()?.id || 'local';
@@ -323,13 +337,14 @@ export default function RoomPage() {
                 meetingTitle={meetingInfo.title}
                 meetingDate={meetingInfo.date}
                 meetingTime={meetingInfo.time}
-                roomCode={formattedRoomCode}
+                roomCode={roomId}
                 participants={participantsForSidebar.slice(0, 5)}
                 currentUser={{
                     displayName,
-                    role: 'Moderator',
+                    role: 'Host',
                 }}
                 onOpenSettings={() => setIsSettingsModalOpen(true)}
+                onShowHelp={() => setShowShortcutsHelp(true)}
             />
 
             {/* Recording Indicator */}
@@ -388,10 +403,18 @@ export default function RoomPage() {
             </main>
 
             {/* Room Settings Modal */}
-            <RoomSettingsModal
-                isOpen={isSettingsModalOpen}
-                onClose={() => setIsSettingsModalOpen(false)}
-                roomId={roomId}
+            {isSettingsModalOpen && (
+                <RoomSettingsModal
+                    isOpen={isSettingsModalOpen}
+                    onClose={() => setIsSettingsModalOpen(false)}
+                    roomId={roomId}
+                />
+            )}
+
+            {/* Keyboard Shortcuts Help Modal */}
+            <KeyboardShortcutsHelp
+                isOpen={showShortcutsHelp}
+                onClose={() => setShowShortcutsHelp(false)}
             />
         </div>
     );
