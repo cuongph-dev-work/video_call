@@ -5,6 +5,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 
 interface PreferencesState {
   // User preferences
+  userId: string;
   displayName: string;
   selectedMic: string;
   selectedCamera: string;
@@ -26,6 +27,7 @@ interface PreferencesActions {
 type PreferencesStore = PreferencesState & PreferencesActions;
 
 const initialState: PreferencesState = {
+  userId: '',
   displayName: '',
   selectedMic: '',
   selectedCamera: '',
@@ -56,6 +58,11 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // Migration function to handle old localStorage keys
       onRehydrateStorage: () => (state) => {
         if (state && typeof window !== 'undefined') {
+          // Generate userId if not exists
+          if (!state.userId) {
+            state.userId = crypto.randomUUID();
+          }
+
           // Migrate from old localStorage keys if they exist
           const oldUsername = localStorage.getItem('username');
           const oldDisplayName = localStorage.getItem('displayName');

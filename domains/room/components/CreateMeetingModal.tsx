@@ -6,6 +6,7 @@ import { vi } from 'date-fns/locale';
 import { X, Calendar as CalendarIcon, Clock, Video, Check } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { generateMeetingCode } from '@video-call/utils';
+import { roomApi } from '@/shared/api/room-api';
 
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
@@ -23,6 +24,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/shared/components/ui/select';
+import { usePreferencesStore } from '@/shared/stores/usePreferencesStore';
 
 interface CreateMeetingModalProps {
     isOpen: boolean;
@@ -34,7 +36,8 @@ interface CreateMeetingModalProps {
 export interface MeetingConfig {
     name: string;
     isInstant: boolean; // true = Now, false = Later
-    scheduledTime?: string;
+    hostId: string;
+    scheduledTime?: Date;
     allowJoinBeforeHost: boolean;
     allowCamera: boolean;
     allowMicrophone: boolean;
@@ -47,8 +50,9 @@ export const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
     onCreate,
     username,
 }) => {
+    const userId = usePreferencesStore(state => state.userId);
     // Form State
-    const [meetingName, setMeetingName] = useState(`Cuộc họp của ${username}`);
+    const [meetingName, setMeetingName] = useState(`${username}'s Meeting`);
     const [isInstant, setIsInstant] = useState(true);
 
     // Date & Time State
@@ -72,7 +76,7 @@ export const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
         }
     }
 
-    const handleCreate = () => {
+    const handleCreate = async () => {
         let finalScheduledTime: string | undefined;
 
         if (!isInstant && scheduledDate && scheduledTime) {
@@ -92,9 +96,20 @@ export const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
             allowJoinBeforeHost,
             allowCamera,
             allowMicrophone,
-            roomId: generateMeetingCode(),
+            roomId: '', // Set by API response
         };
-        onCreate(config);
+
+        try {
+            const response = await roomApi.createRoom(config);
+            onCreate({ ...config, roomId: response.roomId });
+        } catch (error) {
+            console.error("Failed to create room", error);
+            // You might want to show a toast here, but onCreate handles success logic usually
+            // For now let's persist the error handling upstream or add a toast here.
+            // Since the onCreate prop usually handles the navigation/toast, we pass the data up.
+            // Wait, if API fails, we shouldn't call onCreate.
+            // Let's assume the parent handles the UI feedback, but we need to pass the REAL roomId from API.
+        }
     };
 
     return (

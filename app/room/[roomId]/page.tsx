@@ -10,6 +10,7 @@ import { useScreenShare } from '@/domains/media/hooks/useScreenShare';
 import { useMediaRecorder } from '@/domains/media/hooks/useMediaRecorder';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import { useChatStore } from '@/domains/chat/stores/useChatStore';
+import { usePreferencesStore } from '@/shared/stores/usePreferencesStore';
 
 // New components
 import { RoomHeader } from '@/domains/room/components/RoomHeader';
@@ -20,6 +21,9 @@ import { PreJoinScreen } from '@/domains/room/components/PreJoinScreen';
 import { WaitingUsersNotification } from '@/shared/components/WaitingUsersNotification';
 import { RecordingIndicator } from '@/domains/media/components/RecordingIndicator';
 import { KeyboardShortcutsHelp } from '@/shared/components/KeyboardShortcutsHelp';
+import { WaitingRoomScreen } from '@/domains/room/components/WaitingRoomScreen';
+import { roomApi } from '@/shared/api/room-api';
+import { useSearchParams } from 'next/navigation';
 import type { WaitingUser } from '../../../../../packages/types/src/waiting-room';
 
 // Lazy load RoomSettingsModal
@@ -101,6 +105,8 @@ export default function RoomPage() {
     // Track if already joined to prevent re-joining on HMR
     const hasJoinedRef = useRef(false);
 
+    const userId = usePreferencesStore(state => state.userId);
+
     // Join room when socket connects (AND user has joined via UI)
     useEffect(() => {
         const socket = getSocket();
@@ -109,6 +115,7 @@ export default function RoomPage() {
 
             socket.emit('join-room', {
                 roomId,
+                userId,
                 displayName,
             });
 
@@ -278,11 +285,73 @@ export default function RoomPage() {
         }
     }, [getSocket, roomId]);
 
+    // Waiting room state
+    const [isInWaitingRoom, setIsInWaitingRoom] = useState(false);
+    const searchParams = useSearchParams();
+
     // PRE-JOIN HANDLER
-    const handleJoin = (name: string) => {
+    const handleJoin = async (name: string) => {
         setDisplayName(name);
-        setIsJoined(true);
+
+        // Check if we created the room (bypasses waiting room)
+        const isCreator = searchParams.get('ref') === 'created';
+
+        if (isCreator) {
+            setIsJoined(true);
+            return;
+        }
+
+        try {
+            // Check room access
+            const access = await roomApi.checkAccess(roomId);
+
+            if (access.waitingRoomEnabled) {
+                // Join waiting room
+                setIsInWaitingRoom(true);
+                const socket = getSocket();
+                if (socket) {
+                    socket.emit('join-waiting-room', { roomId, displayName: name });
+                }
+            } else {
+                // Join directly
+                setIsJoined(true);
+            }
+        } catch (error) {
+            console.error('Failed to check access:', error);
+            // Fallback: try to join directly or show error
+            // For now, assume open if check fails (or maybe block?)
+            // setStreamError('Failed to connect to room'); // reuse stream error or add new one
+            // Let's try to join and let backend handle it
+            setIsJoined(true);
+        }
     };
+
+    // Listen for admission
+    useEffect(() => {
+        const socket = getSocket();
+        if (socket && isInWaitingRoom) {
+            const handleAdmitted = () => {
+                setIsInWaitingRoom(false);
+                setIsJoined(true);
+            };
+
+            const handleRejected = (data: { message: string }) => {
+                // Handle rejection (e.g., redirect home or show message)
+                alert(data.message || 'You were denied access to the room.');
+                setIsInWaitingRoom(false);
+                router.push('/');
+            };
+
+            socket.on('admitted', handleAdmitted);
+            socket.on('rejected', handleRejected);
+
+            return () => {
+                socket.off('admitted', handleAdmitted);
+                socket.off('rejected', handleRejected);
+            };
+        }
+    }, [getSocket, isInWaitingRoom, router]);
+
 
     // Keyboard shortcuts - must be after all handlers
     useKeyboardShortcuts({
@@ -335,6 +404,10 @@ export default function RoomPage() {
         date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
         time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
     }), []);
+
+    if (isInWaitingRoom) {
+        return <WaitingRoomScreen roomId={roomId} displayName={displayName} onLeave={() => router.push('/')} />;
+    }
 
     if (!isJoined) {
         return (

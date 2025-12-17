@@ -133,7 +133,7 @@ export default function HomePage() {
       // Instant meeting: Redirect to pre-join immediately
       // In a real app, we would send 'config' to backend here to persist settings
       // For now, we just navigate
-      router.push(`/room/${config.roomId}/pre-join`);
+      router.push(`/room/${config.roomId}/pre-join?ref=created`);
     } else {
       // Scheduled meeting: Just show alert for now as per US accept criteria "show screen with link" (simplified)
       // We'll use a simple alert for Phase 4 MVP to avoid building a full "Success" screen/modal right now unless requested
