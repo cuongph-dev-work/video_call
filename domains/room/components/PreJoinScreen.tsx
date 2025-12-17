@@ -1,19 +1,49 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { valibotResolver } from '@hookform/resolvers/valibot';
-import { Video, Mic, MicOff, VideoOff, Volume2, User, ShieldCheck, MonitorUp } from 'lucide-react';
-import { useLocalStream } from '@/domains/media/hooks/useLocalStream';
+import { Video, Mic, MicOff, VideoOff, Volume2, User, ShieldCheck } from 'lucide-react';
 import { displayNameSchema, type DisplayNameFormData } from '@/shared/lib/validations';
 import { usePreferencesStore } from '@/shared/stores/usePreferencesStore';
 import { cn } from '@/shared/lib/utils';
+import { DeviceSelect } from './DeviceSelect';
 
-export default function PreJoinPage() {
-    const params = useParams();
-    const router = useRouter();
-    const roomId = params.roomId as string;
+interface PreJoinScreenProps {
+    roomId: string;
+    onJoin: (displayName: string) => void;
+    localStream: MediaStream | null;
+    audioEnabled: boolean;
+    videoEnabled: boolean;
+    devices: MediaDeviceInfo[];
+    selectedMic: string;
+    selectedCamera: string;
+    selectedSpeaker: string;
+    streamError: string | null;
+    toggleAudio: () => void;
+    toggleVideo: () => void;
+    switchMicrophone: (id: string) => Promise<void>;
+    switchCamera: (id: string) => Promise<void>;
+    switchSpeaker: (id: string, element?: HTMLVideoElement) => Promise<void>;
+}
+
+export function PreJoinScreen({
+    roomId, // used? maybe not directly but good to have
+    onJoin,
+    localStream,
+    audioEnabled,
+    videoEnabled,
+    devices,
+    selectedMic,
+    selectedCamera,
+    selectedSpeaker,
+    streamError,
+    toggleAudio,
+    toggleVideo,
+    switchMicrophone,
+    switchCamera,
+    switchSpeaker,
+}: PreJoinScreenProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
 
     // React Hook Form setup with Valibot
@@ -32,22 +62,6 @@ export default function PreJoinPage() {
     });
 
     const displayName = watch('displayName');
-
-    const {
-        stream: localStream,
-        audioEnabled,
-        videoEnabled,
-        devices,
-        selectedMic,
-        selectedCamera,
-        selectedSpeaker,
-        error: streamError,
-        toggleAudio,
-        toggleVideo,
-        switchMicrophone,
-        switchCamera,
-        switchSpeaker,
-    } = useLocalStream();
 
     // Get displayName from store
     const storedDisplayName = usePreferencesStore(state => state.displayName);
@@ -73,19 +87,7 @@ export default function PreJoinPage() {
     const onJoinSubmit = (data: DisplayNameFormData) => {
         // Save name to store (which automatically persists to localStorage)
         setStoredDisplayName(data.displayName);
-
-        // Navigate to room
-        router.push(`/room/${roomId}`);
-    };
-
-    const handlePresentNow = () => {
-        if (!displayName.trim() || !!errors.displayName) return;
-
-        const name = displayName.trim();
-        // Save to store (which automatically persists to localStorage)
-        setStoredDisplayName(name);
-
-        router.push(`/room/${roomId}?share=true`);
+        onJoin(data.displayName);
     };
 
     return (
@@ -142,28 +144,12 @@ export default function PreJoinPage() {
                             {/* Mic Indicator */}
                             {audioEnabled && (
                                 <div className="absolute top-5 left-5 flex gap-3">
-                                    <div className="bg-[#1e2139]/95 backdrop-blur-md border border-white/10 px-4 py-2.5 rounded-xl flex items-center gap-3 shadow-xl">
-                                        <Volume2 className="w-5 h-5 text-emerald-400" />
-                                        <div className="flex items-center gap-0.5 h-6">
-                                            {Array.from({ length: 25 }).map((_, i) => {
-                                                // Create a visual wave effect or random levels
-                                                const isActive = i < 8; // Static for now, can be dynamic later
-                                                return (
-                                                    <div
-                                                        key={i}
-                                                        className={cn(
-                                                            "w-1 rounded-sm transition-all duration-150",
-                                                            isActive
-                                                                ? "bg-emerald-400 h-full"
-                                                                : "bg-gray-700/60 h-2"
-                                                        )}
-                                                    />
-                                                );
-                                            })}
+                                    <div className="bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-lg flex items-center gap-2.5">
+                                        <div className="flex items-end gap-1 h-4 w-4 justify-center">
+                                            <div className="w-1 bg-green-400 rounded-full h-1 animate-pulse"></div>
+                                            <div className="w-1 bg-green-400 rounded-full h-2 animate-pulse" style={{ animationDelay: '0.1s' }}></div>
+                                            <div className="w-1 bg-green-400 rounded-full h-3 animate-pulse" style={{ animationDelay: '0.2s' }}></div>
                                         </div>
-                                        <span className="text-sm font-semibold text-white tabular-nums">
-                                            32%
-                                        </span>
                                     </div>
                                 </div>
                             )}
@@ -175,7 +161,7 @@ export default function PreJoinPage() {
                                     className={cn(
                                         "group/btn relative flex items-center justify-center size-12 rounded-xl transition-all duration-300 shadow-lg cursor-pointer",
                                         audioEnabled
-                                            ? "bg-white/10 hover:bg-white/20 text-white border border-white/5"
+                                            ? "bg-blue-600hover:bg-blue-500 text-white border border-white/5"
                                             : "bg-red-600 hover:bg-red-500 text-white shadow-red-500/20"
                                     )}
                                     title={audioEnabled ? 'Tắt tiếng' : 'Bật tiếng'}
@@ -188,7 +174,7 @@ export default function PreJoinPage() {
                                     className={cn(
                                         "group/btn relative flex items-center justify-center size-12 rounded-xl transition-all duration-300 shadow-lg cursor-pointer",
                                         videoEnabled
-                                            ? "bg-white/10 hover:bg-white/20 text-white border border-white/5"
+                                            ? "bg-blue-600hover:bg-blue-500 text-white border border-white/5"
                                             : "bg-red-600 hover:bg-red-500 text-white shadow-red-500/20"
                                     )}
                                     title="Bật/tắt camera"
@@ -304,13 +290,13 @@ export default function PreJoinPage() {
                                 >
                                     <span className="text-lg">Tham Gia Ngay</span>
                                 </button>
-                                <button
+                                {/* <button
                                     onClick={handlePresentNow}
                                     className="min-w-[150px] sm:w-auto px-6 py-4 flex items-center justify-center gap-2 bg-[#222730] hover:bg-[#313845] border border-[#313845] text-gray-200 rounded-xl font-medium text-base transition-all duration-200 hover:text-white cursor-pointer transform hover:scale-[1.02] active:scale-[0.98]"
                                 >
                                     <MonitorUp className="w-5 h-5" />
                                     Trình bày
-                                </button>
+                                </button> */}
                             </div>
                         </div>
 
@@ -328,45 +314,3 @@ export default function PreJoinPage() {
         </div>
     );
 }
-
-// Device Select Component
-interface DeviceSelectProps {
-    label: string;
-    icon: React.ReactNode;
-    devices: MediaDeviceInfo[];
-    selectedDeviceId: string;
-    onDeviceChange: (deviceId: string) => void;
-}
-
-const DeviceSelect: React.FC<DeviceSelectProps> = ({ label, icon, devices, selectedDeviceId, onDeviceChange }) => {
-    return (
-        <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">
-                {label}
-            </label>
-            <div className="relative group">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-blue-500 transition-colors">
-                    {icon}
-                </span>
-                <select
-                    value={selectedDeviceId}
-                    onChange={(e) => onDeviceChange(e.target.value)}
-                    className="w-full appearance-none bg-[#222730] border border-[#313845] text-gray-200 rounded-xl h-11 pl-11 pr-10 text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 outline-none cursor-pointer transition-all hover:border-gray-600"
-                >
-                    {devices.length === 0 ? (
-                        <option value="">Không tìm thấy {label.toLowerCase()}</option>
-                    ) : (
-                        devices.map((device) => (
-                            <option key={device.deviceId} value={device.deviceId}>
-                                {device.label || `${label} ${device.deviceId.slice(0, 8)}`}
-                            </option>
-                        ))
-                    )}
-                </select>
-                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
-                    ▼
-                </span>
-            </div>
-        </div>
-    );
-};

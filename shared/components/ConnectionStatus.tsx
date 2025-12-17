@@ -18,7 +18,9 @@ export function ConnectionStatus({
 
   useEffect(() => {
     if (!isConnected || error) {
-      setShow(true);
+      // Use setTimeout to avoid setState in effect
+      const timer = setTimeout(() => setShow(true), 0);
+      return () => clearTimeout(timer);
     } else {
       // Hide after 2 seconds when connected
       const timer = setTimeout(() => setShow(false), 2000);

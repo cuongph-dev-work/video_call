@@ -4,11 +4,18 @@ import React, { useState } from 'react';
 import { X, Shield, Users, Mic } from 'lucide-react';
 import { SecurityTab } from './SecurityTab';
 import { MediaTab } from './MediaTab';
+import { ParticipantsTab } from './ParticipantsTab';
 
 interface RoomSettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
     roomId: string;
+    participants?: {
+        id: string;
+        displayName: string;
+        avatar?: string;
+        role?: string;
+    }[];
 }
 
 type TabType = 'security' | 'participants' | 'media';
@@ -17,6 +24,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
     isOpen,
     onClose,
     roomId,
+    participants = [],
 }) => {
     const [activeTab, setActiveTab] = useState<TabType>('security');
 
@@ -76,7 +84,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                     {/* Tab Content */}
                     <div className="flex-1 overflow-y-auto p-6">
                         {activeTab === 'security' && <SecurityTab roomId={roomId} />}
-                        {activeTab === 'participants' && <ParticipantsTab />}
+                        {activeTab === 'participants' && <ParticipantsTab participants={participants} />}
                         {activeTab === 'media' && <MediaTab />}
                     </div>
                 </div>
@@ -136,7 +144,4 @@ const MobileTab: React.FC<MobileTabProps> = ({ label, active, onClick }) => (
     </button>
 );
 
-// Placeholder tab components
-const ParticipantsTab: React.FC = () => (
-    <div className="text-gray-400">Participants tab content</div>
-);
+

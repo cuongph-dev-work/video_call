@@ -18,6 +18,7 @@ export function useVirtualBackground({ videoElement, enabled }: UseVirtualBackgr
   const outputCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const processedStreamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   // Initialize processor
   useEffect(() => {
@@ -45,9 +46,19 @@ export function useVirtualBackground({ videoElement, enabled }: UseVirtualBackgr
     void initProcessor();
 
     return () => {
-      cleanup();
+      if (cleanupRef.current) {
+        cleanupRef.current();
+      }
     };
   }, [enabled]);
+
+  const stopProcessing = useCallback(() => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    setIsProcessing(false);
+  }, []);
 
   // Process video frames
   const processFrames = useCallback(async () => {
@@ -72,6 +83,13 @@ export function useVirtualBackground({ videoElement, enabled }: UseVirtualBackgr
     }
   }, [isReady, videoElement]);
 
+  const startProcessing = useCallback(() => {
+    if (isProcessing) return;
+
+    setIsProcessing(true);
+    void processFrames();
+  }, [isProcessing, processFrames]);
+
   // Start/stop processing based on config
   useEffect(() => {
     if (!isReady || !videoElement || currentConfig.type === 'none') {
@@ -84,22 +102,8 @@ export function useVirtualBackground({ videoElement, enabled }: UseVirtualBackgr
     return () => {
       stopProcessing();
     };
-  }, [isReady, videoElement, currentConfig, processFrames]);
-
-  const startProcessing = useCallback(() => {
-    if (isProcessing) return;
-
-    setIsProcessing(true);
-    void processFrames();
-  }, [isProcessing, processFrames]);
-
-  const stopProcessing = useCallback(() => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    setIsProcessing(false);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, videoElement, currentConfig.type]);
 
   const setBackground = useCallback(
     async (config: BackgroundConfig) => {
@@ -161,6 +165,11 @@ export function useVirtualBackground({ videoElement, enabled }: UseVirtualBackgr
     setIsReady(false);
     setIsProcessing(false);
   }, [stopProcessing]);
+
+  // Store cleanup in ref for use in effect
+  useEffect(() => {
+    cleanupRef.current = cleanup;
+  }, [cleanup]);
 
   return {
     isReady,

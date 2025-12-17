@@ -60,6 +60,7 @@ export function useLocalStream() {
     };
 
     void getDevices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run once on mount to get devices
 
   useEffect(() => {
@@ -278,6 +279,7 @@ export function useLocalStream() {
       }
 
       // Type assertion for setSinkId (not in standard TypeScript types yet)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (audioElement as any).setSinkId(deviceId);
       setSelectedSpeaker(deviceId);
       updateStoredSpeaker(deviceId); // Persist to store

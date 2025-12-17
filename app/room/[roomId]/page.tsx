@@ -16,6 +16,7 @@ import { RoomHeader } from '@/domains/room/components/RoomHeader';
 import { VideoSection } from '@/domains/room/components/VideoSection';
 import { ControlBar } from '@/domains/room/components/ControlBar';
 import { Sidebar } from '@/domains/room/components/Sidebar';
+import { PreJoinScreen } from '@/domains/room/components/PreJoinScreen';
 import { WaitingUsersNotification } from '@/shared/components/WaitingUsersNotification';
 import { RecordingIndicator } from '@/domains/media/components/RecordingIndicator';
 import { KeyboardShortcutsHelp } from '@/shared/components/KeyboardShortcutsHelp';
@@ -49,15 +50,25 @@ export default function RoomPage() {
     const params = useParams();
     const router = useRouter();
     const roomId = params.roomId as string;
+    const [isJoined, setIsJoined] = useState(false);
+    const [displayName, setDisplayName] = useState('');
 
     const { getSocket, isConnected } = useSocket();
     const {
         stream: localStream,
         audioEnabled,
         videoEnabled,
+        devices,
+        selectedMic,
+        selectedCamera,
+        selectedSpeaker,
+        error: streamError,
         toggleAudio,
         toggleVideo,
         stopStream,
+        switchMicrophone,
+        switchCamera,
+        switchSpeaker,
     } = useLocalStream();
 
     const { isSharing, screenStream, startScreenShare, stopScreenShare } = useScreenShare(getSocket);
@@ -77,36 +88,23 @@ export default function RoomPage() {
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
 
-    // Use useState with useEffect to avoid hydration mismatch
-    const [displayName, setDisplayName] = useState('Guest');
-
-    // Set random name only on client side after mount
-    useEffect(() => {
-        setDisplayName('User ' + Math.floor(Math.random() * 1000));
-    }, []);
-
     // Recording - use combined stream (screen share or local)
     const recordingStream = isSharing ? screenStream : localStream;
     const {
         isRecording,
-        isPaused,
         duration: recordingDuration,
         startRecording,
         stopRecording,
-        downloadRecording,
         formatDuration,
     } = useMediaRecorder(recordingStream);
 
     // Track if already joined to prevent re-joining on HMR
     const hasJoinedRef = useRef(false);
 
-    // Format room code
-    const formattedRoomCode = roomId.substring(0, 12);
-
-    // Join room when socket connects
+    // Join room when socket connects (AND user has joined via UI)
     useEffect(() => {
         const socket = getSocket();
-        if (socket && isConnected && roomId && !hasJoinedRef.current) {
+        if (socket && isConnected && roomId && !hasJoinedRef.current && isJoined && displayName) {
             hasJoinedRef.current = true;
 
             socket.emit('join-room', {
@@ -156,7 +154,7 @@ export default function RoomPage() {
                 });
             });
 
-            socket.on('waiting-count-updated', (data: { waitingCount: number }) => {
+            socket.on('waiting-count-updated', () => {
                 // Get fresh list from server if count changed
                 socket.emit('get-waiting-users', { roomId });
             });
@@ -167,6 +165,7 @@ export default function RoomPage() {
         }
 
         return () => {
+            // Only remove listeners if we actually joined or if socket exists
             if (socket) {
                 socket.off('room-joined');
                 socket.off('user-joined');
@@ -181,7 +180,7 @@ export default function RoomPage() {
             // DON'T reset hasJoinedRef here - it causes re-join on HMR
             // The ref persists across re-renders to prevent duplicate joins
         };
-    }, [getSocket, isConnected, roomId, displayName]);
+    }, [getSocket, isConnected, roomId, displayName, isJoined]);
 
     // Listen for remote stream events
     useEffect(() => {
@@ -211,7 +210,7 @@ export default function RoomPage() {
     // Event handlers
     const handleEndCall = useCallback(() => {
         const socket = getSocket();
-        if (socket) {
+        if (socket && isJoined) {
             socket.emit('leave-room', { roomId });
         }
         stopStream();
@@ -219,7 +218,7 @@ export default function RoomPage() {
             stopScreenShare(roomId);
         }
         router.push('/');
-    }, [getSocket, roomId, stopStream, isSharing, stopScreenShare, router]);
+    }, [getSocket, roomId, stopStream, isSharing, stopScreenShare, router, isJoined]);
 
     const handleToggleAudio = useCallback(() => {
         toggleAudio();
@@ -279,6 +278,12 @@ export default function RoomPage() {
         }
     }, [getSocket, roomId]);
 
+    // PRE-JOIN HANDLER
+    const handleJoin = (name: string) => {
+        setDisplayName(name);
+        setIsJoined(true);
+    };
+
     // Keyboard shortcuts - must be after all handlers
     useKeyboardShortcuts({
         onToggleMic: handleToggleAudio,
@@ -287,7 +292,7 @@ export default function RoomPage() {
         onToggleRecording: isRecording ? stopRecording : startRecording,
         onEndCall: handleEndCall,
         onShowHelp: () => setShowShortcutsHelp(prev => !prev),
-        enabled: true,
+        enabled: isJoined, // Only enable shortcuts when joined
     });
 
     // Prepare participants data for components (deduplicate)
@@ -331,6 +336,28 @@ export default function RoomPage() {
         time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
     }), []);
 
+    if (!isJoined) {
+        return (
+            <PreJoinScreen
+                roomId={roomId}
+                onJoin={handleJoin}
+                localStream={localStream}
+                audioEnabled={audioEnabled}
+                videoEnabled={videoEnabled}
+                devices={devices}
+                selectedMic={selectedMic}
+                selectedCamera={selectedCamera}
+                selectedSpeaker={selectedSpeaker}
+                streamError={streamError}
+                toggleAudio={toggleAudio}
+                toggleVideo={toggleVideo}
+                switchMicrophone={switchMicrophone}
+                switchCamera={switchCamera}
+                switchSpeaker={switchSpeaker}
+            />
+        );
+    }
+
     return (
         <div className="bg-[#13161f] text-white font-sans overflow-hidden h-screen flex flex-col">
             <RoomHeader
@@ -350,7 +377,6 @@ export default function RoomPage() {
             {/* Recording Indicator */}
             {isRecording && (
                 <RecordingIndicator
-                    duration={recordingDuration}
                     formatDuration={formatDuration}
                 />
             )}
@@ -408,6 +434,7 @@ export default function RoomPage() {
                     isOpen={isSettingsModalOpen}
                     onClose={() => setIsSettingsModalOpen(false)}
                     roomId={roomId}
+                    participants={participantsForSidebar}
                 />
             )}
 

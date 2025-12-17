@@ -25,10 +25,14 @@ export default function WaitingRoomPage() {
 
         // Join waiting room
         socket.emit('join-waiting-room', { roomId, displayName });
-        setIsWaiting(true);
+        
+        // Set waiting state after emit
+        const timer = setTimeout(() => {
+            setIsWaiting(true);
+        }, 0);
 
         // Listen for admission
-        socket.on('admitted', (data: { roomId: string; message: string }) => {
+        socket.on('admitted', () => {
             setWaitingMessage('Admitted! Joining room...');
             // Redirect to room after short delay
             setTimeout(() => {
@@ -48,9 +52,12 @@ export default function WaitingRoomPage() {
         });
 
         return () => {
-            socket.off('admitted');
-            socket.off('rejected');
-            socket.off('waiting-room-joined');
+            clearTimeout(timer);
+            if (socket) {
+                socket.off('admitted');
+                socket.off('rejected');
+                socket.off('waiting-room-joined');
+            }
         };
     }, [getSocket, isConnected, roomId, displayName, router]);
 

@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Video, Mic, Volume2, Sparkles, Sliders, ChevronDown, VideoOff } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Video, Mic, Volume2, Sparkles, Sliders, VideoOff } from 'lucide-react';
+import { DeviceSelect } from '@/domains/room/components/DeviceSelect';
+
 import { BackgroundSelector } from '@/domains/media/components/BackgroundSelector';
 import { BackgroundType } from '@/domains/media/lib/background-processor';
 import { useVirtualBackground } from '@/domains/media/hooks/useVirtualBackground';
@@ -43,7 +45,9 @@ export const MediaTab: React.FC = () => {
     const [audioLevel, setAudioLevel] = useState(0);
     const [isVideoEnabled, setIsVideoEnabled] = useState(true);
 
-    // Virtual background processing
+    // Virtual background processing - use null initially to avoid accessing ref during render
+    const [videoElement, setVideoElement] = React.useState<HTMLVideoElement | null>(null);
+
     const {
         isReady: isBackgroundReady,
         isProcessing: isBackgroundProcessing,
@@ -51,9 +55,14 @@ export const MediaTab: React.FC = () => {
         setBackgroundType: applyBackground,
         isSupported: isBackgroundSupported,
     } = useVirtualBackground({
-        videoElement: videoRef.current,
+        videoElement,
         enabled: settings.backgroundType !== 'none',
     });
+
+    // Update videoElement ref when videoRef changes
+    useEffect(() => {
+        setVideoElement(videoRef.current);
+    }, []);
 
     // Get available media devices
     useEffect(() => {
@@ -95,6 +104,29 @@ export const MediaTab: React.FC = () => {
         return () => {
             navigator.mediaDevices.removeEventListener('devicechange', getDevices);
         };
+    }, []);
+
+    // Analyze audio levels - defined before useEffect to avoid hoisting issues
+    const analyzeAudio = useCallback(() => {
+        if (!analyserRef.current) return;
+
+        const analyser = analyserRef.current;
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        const updateLevel = () => {
+            if (!analyserRef.current || !streamRef.current || streamRef.current.getAudioTracks().length === 0) {
+                setAudioLevel(0);
+                if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+                return;
+            }
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            const level = Math.min(100, (average / 255) * 100 * 2); // Scale up for visibility
+            setAudioLevel(level);
+            animationFrameRef.current = requestAnimationFrame(updateLevel);
+        };
+
+        updateLevel();
     }, []);
 
     // Setup media stream for preview
@@ -173,8 +205,11 @@ export const MediaTab: React.FC = () => {
             if (animationFrameRef.current) {
                 cancelAnimationFrame(animationFrameRef.current);
             }
-            setAudioLevel(0);
-            setIsVideoEnabled(false);
+            // Use setTimeout to avoid setState in cleanup
+            setTimeout(() => {
+                setAudioLevel(0);
+                setIsVideoEnabled(false);
+            }, 0);
             if (videoRef.current) {
                 videoRef.current.srcObject = null;
             }
@@ -194,30 +229,7 @@ export const MediaTab: React.FC = () => {
                 audioContextRef.current = null;
             }
         };
-    }, [selectedDevices.microphone, selectedDevices.camera, isVideoEnabled]); // isVideoEnabled is a dependency to react to its own changes
-
-    // Analyze audio levels
-    const analyzeAudio = () => {
-        if (!analyserRef.current) return;
-
-        const analyser = analyserRef.current;
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-        const updateLevel = () => {
-            if (!analyserRef.current || !streamRef.current || streamRef.current.getAudioTracks().length === 0) {
-                setAudioLevel(0);
-                if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-                return;
-            }
-            analyser.getByteFrequencyData(dataArray);
-            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-            const level = Math.min(100, (average / 255) * 100 * 2); // Scale up for visibility
-            setAudioLevel(level);
-            animationFrameRef.current = requestAnimationFrame(updateLevel);
-        };
-
-        updateLevel();
-    };
+    }, [selectedDevices.microphone, selectedDevices.camera, isVideoEnabled, analyzeAudio]); // isVideoEnabled is a dependency to react to its own changes
 
     return (
         <div className="space-y-6">
@@ -299,30 +311,30 @@ export const MediaTab: React.FC = () => {
                 </h3>
 
                 {/* Microphone */}
-                <DeviceSelector
+                <DeviceSelect
                     label="Microphone"
                     icon={<Mic className="w-4 h-4" />}
                     devices={devices.audioInputs}
-                    selectedDevice={selectedDevices.microphone}
-                    onChange={(deviceId) => setSelectedDevices(prev => ({ ...prev, microphone: deviceId }))}
+                    selectedDeviceId={selectedDevices.microphone}
+                    onDeviceChange={(deviceId) => setSelectedDevices(prev => ({ ...prev, microphone: deviceId }))}
                 />
 
                 {/* Camera */}
-                <DeviceSelector
+                <DeviceSelect
                     label="Camera"
                     icon={<Video className="w-4 h-4" />}
                     devices={devices.videoInputs}
-                    selectedDevice={selectedDevices.camera}
-                    onChange={(deviceId) => setSelectedDevices(prev => ({ ...prev, camera: deviceId }))}
+                    selectedDeviceId={selectedDevices.camera}
+                    onDeviceChange={(deviceId) => setSelectedDevices(prev => ({ ...prev, camera: deviceId }))}
                 />
 
                 {/* Speaker */}
-                <DeviceSelector
+                <DeviceSelect
                     label="Speaker"
                     icon={<Volume2 className="w-4 h-4" />}
                     devices={devices.audioOutputs}
-                    selectedDevice={selectedDevices.speaker}
-                    onChange={(deviceId) => setSelectedDevices(prev => ({ ...prev, speaker: deviceId }))}
+                    selectedDeviceId={selectedDevices.speaker}
+                    onDeviceChange={(deviceId) => setSelectedDevices(prev => ({ ...prev, speaker: deviceId }))}
                 />
             </div>
 
@@ -429,7 +441,7 @@ export const MediaTab: React.FC = () => {
                             </p>
                         </div>
                     </div>
-                    
+
                     {/* Status indicators */}
                     <div className="flex flex-col items-end gap-1">
                         {!isBackgroundSupported && (
@@ -450,7 +462,7 @@ export const MediaTab: React.FC = () => {
                         <BackgroundSelector
                             onSelect={async (type, options) => {
                                 setSettings(prev => ({ ...prev, backgroundType: type }));
-                                
+
                                 // Apply background to video stream
                                 try {
                                     await applyBackground(type, options);
@@ -479,7 +491,7 @@ export const MediaTab: React.FC = () => {
                         <div className="flex items-start gap-2">
                             <Sparkles className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
                             <p className="text-xs text-blue-400/90">
-                                <strong>Lưu ý:</strong> Nền ảo sử dụng AI (MediaPipe) để tách người khỏi background. 
+                                <strong>Lưu ý:</strong> Nền ảo sử dụng AI (MediaPipe) để tách người khỏi background.
                                 Có thể ảnh hưởng hiệu suất trên thiết bị yếu. Cần kết nối internet lần đầu để tải models.
                             </p>
                         </div>
@@ -490,49 +502,7 @@ export const MediaTab: React.FC = () => {
     );
 };
 
-// Device Selector Component
-interface DeviceSelectorProps {
-    label: string;
-    icon: React.ReactNode;
-    devices: MediaDeviceInfo[];
-    selectedDevice: string;
-    onChange: (deviceId: string) => void;
-}
 
-const DeviceSelector: React.FC<DeviceSelectorProps> = ({
-    label,
-    icon,
-    devices,
-    selectedDevice,
-    onChange,
-}) => {
-    return (
-        <div className="space-y-2">
-            <label className="text-xs text-gray-400 ml-1 flex items-center gap-2">
-                {icon}
-                {label}
-            </label>
-            <div className="relative">
-                <select
-                    value={selectedDevice}
-                    onChange={(e) => onChange(e.target.value)}
-                    className="w-full bg-[#222730] border border-[#313845] text-gray-200 rounded-lg px-4 py-3 pr-10 text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 outline-none cursor-pointer transition-all hover:border-gray-600 appearance-none"
-                >
-                    {devices.length === 0 ? (
-                        <option>Không tìm thấy thiết bị</option>
-                    ) : (
-                        devices.map((device) => (
-                            <option key={device.deviceId} value={device.deviceId}>
-                                {device.label || `${label} ${device.deviceId.substring(0, 8)}`}
-                            </option>
-                        ))
-                    )}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
-            </div>
-        </div>
-    );
-};
 
 // Toggle Option Component
 interface ToggleOptionProps {

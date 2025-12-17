@@ -99,7 +99,7 @@ export function useMediaRecorder(stream: MediaStream | null) {
         isPaused: false,
         duration: 0,
       }));
-    } catch (error) {
+    } catch {
       // Silently handle error - user will see recording button state
       setState((prev) => ({
         ...prev,
