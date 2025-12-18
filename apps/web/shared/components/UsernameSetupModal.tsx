@@ -1,46 +1,49 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useSyncExternalStore } from 'react';
 import { useForm } from 'react-hook-form';
 import { valibotResolver } from '@hookform/resolvers/valibot';
 import { User, CheckCircle2 } from 'lucide-react';
 import { usernameSchema, type UsernameFormData } from '@/shared/lib/validations';
+import { usePreferencesStore } from '@/shared/stores/usePreferencesStore';
+
+const emptySubscribe = () => () => { };
 
 export function UsernameSetupModal() {
-    const [mounted, setMounted] = useState(false);
-    const [isOpen, setIsOpen] = useState(false);
+    const isClient = useSyncExternalStore(
+        emptySubscribe,
+        () => true,
+        () => false
+    );
+    const { displayName, setDisplayName } = usePreferencesStore();
+    const [isSubmitted, setIsSubmitted] = useState(false);
 
     const {
         register,
         handleSubmit,
         formState: { errors, isValid, isDirty },
         setValue,
-        watch,
     } = useForm<UsernameFormData>({
         resolver: valibotResolver(usernameSchema),
         mode: 'onChange',
         defaultValues: {
-            username: '',
+            username: displayName || '',
         },
     });
 
-    const username = watch('username');
+    // Modal is open if on client and displayName is missing and not just submitted
+    const isOpen = isClient && !displayName && !isSubmitted;
 
-    // Check if component is mounted (client-side only)
+    // Synchronize form when client-side data is available
     useEffect(() => {
-        setMounted(true);
-        const savedUsername = localStorage.getItem('username');
-        if (savedUsername) {
-            setValue('username', savedUsername);
-        } else {
-            setIsOpen(true);
+        if (isClient && displayName) {
+            setValue('username', displayName);
         }
-    }, [setValue]);
+    }, [isClient, displayName, setValue]);
 
     const onSubmit = (data: UsernameFormData) => {
-        localStorage.setItem('username', data.username);
-        setIsOpen(false);
-        window.location.reload();
+        setIsSubmitted(true);
+        setDisplayName(data.username);
     };
 
     const handleGoogleLogin = () => {
@@ -48,7 +51,7 @@ export function UsernameSetupModal() {
     };
 
     // Don't render anything on server or if already has username
-    if (!mounted || !isOpen) return null;
+    if (!isClient || !isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">

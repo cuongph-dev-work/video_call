@@ -1,7 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { io, Socket } from 'socket.io-client';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface SocketState {
+  isConnected: boolean;
+  isReconnecting: boolean;
+  error: string | null;
+}
 
 interface UseSocketReturn {
   getSocket: () => Socket | null;
@@ -10,117 +20,131 @@ interface UseSocketReturn {
   error: string | null;
   emit: <T>(event: string, data: T) => void;
   on: <T>(event: string, handler: (data: T) => void) => void;
-  off: (event: string) => void;
+  off: (event: string, handler?: (...args: unknown[]) => void) => void;
   reconnect: () => void;
 }
 
-export function useSocket(): UseSocketReturn {
-  const [isConnected, setIsConnected] = useState(false);
-  const [isReconnecting, setIsReconnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const socketRef = useRef<Socket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+// ============================================================================
+// Socket Singleton Manager (Module-level, outside React lifecycle)
+// ============================================================================
 
-  useEffect(() => {
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:4000';
-    
-    const newSocket = io(wsUrl, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      reconnectionAttempts: Infinity,
-      timeout: 20000,
-    });
+const INITIAL_STATE: SocketState = {
+  isConnected: false,
+  isReconnecting: false,
+  error: null,
+};
 
-    newSocket.on('connect', () => {
-      setIsConnected(true);
-      setIsReconnecting(false);
-      setError(null);
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
-    });
+let socketInstance: Socket | null = null;
+let socketState: SocketState = { ...INITIAL_STATE };
+const listeners = new Set<() => void>();
 
-    newSocket.on('disconnect', (reason) => {
-      setIsConnected(false);
-      
-      // If disconnect is not intentional, mark as reconnecting
-      if (reason === 'io server disconnect') {
-        // Server disconnected, try to reconnect manually
-        newSocket.connect();
-        setIsReconnecting(true);
-      } else if (reason === 'io client disconnect') {
-        // Client disconnected intentionally
-        setIsReconnecting(false);
-      } else {
-        // Network error, will auto-reconnect
-        setIsReconnecting(true);
-      }
-    });
+function updateState(partial: Partial<SocketState>) {
+  socketState = { ...socketState, ...partial };
+  listeners.forEach((listener) => listener());
+}
 
-    newSocket.on('connect_error', (err: Error) => {
-      setError(err.message);
-      setIsReconnecting(true);
-    });
+function getSocketInstance(): Socket {
+  if (socketInstance) return socketInstance;
 
-    newSocket.on('error', (err: Error) => {
-      setError(err.message);
-    });
+  const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:4000';
 
-    newSocket.on('reconnect_attempt', () => {
-      setIsReconnecting(true);
-      setError(null);
-    });
+  socketInstance = io(wsUrl, {
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: Infinity,
+    timeout: 20000,
+  });
 
-    newSocket.on('reconnect_failed', () => {
-      setError('Không thể kết nối đến server. Vui lòng thử lại sau.');
-      setIsReconnecting(false);
-    });
+  socketInstance.on('connect', () => {
+    updateState({ isConnected: true, isReconnecting: false, error: null });
+  });
 
-    socketRef.current = newSocket;
-
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      newSocket.disconnect();
-    };
-  }, []);
-
-  const emit = useCallback(<T,>(event: string, data: T) => {
-    if (socketRef.current && isConnected) {
-      socketRef.current.emit(event, data);
+  socketInstance.on('disconnect', (reason) => {
+    const isReconnecting = reason !== 'io client disconnect';
+    if (reason === 'io server disconnect') {
+      socketInstance?.connect();
     }
-    // Silently fail if not connected - reconnection will handle retries
-  }, [isConnected]);
+    updateState({ isConnected: false, isReconnecting });
+  });
+
+  socketInstance.on('connect_error', (err: Error) => {
+    updateState({ error: err.message, isReconnecting: true });
+  });
+
+  socketInstance.on('error', (err: Error) => {
+    updateState({ error: err.message });
+  });
+
+  socketInstance.on('reconnect_attempt', () => {
+    updateState({ isReconnecting: true, error: null });
+  });
+
+  socketInstance.on('reconnect_failed', () => {
+    updateState({
+      error: 'Không thể kết nối đến server. Vui lòng thử lại sau.',
+      isReconnecting: false,
+    });
+  });
+
+  return socketInstance;
+}
+
+function subscribe(callback: () => void) {
+  listeners.add(callback);
+  getSocketInstance(); // Ensure socket is initialized
+  return () => listeners.delete(callback);
+}
+
+function getSnapshot(): SocketState {
+  return socketState;
+}
+
+function getServerSnapshot(): SocketState {
+  return INITIAL_STATE;
+}
+
+// ============================================================================
+// React Hook
+// ============================================================================
+
+export function useSocket(): UseSocketReturn {
+  const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
+  const getSocket = useCallback(() => socketInstance, []);
+
+  const emit = useCallback(
+    <T,>(event: string, data: T) => {
+      if (socketInstance?.connected) {
+        socketInstance.emit(event, data);
+      }
+    },
+    []
+  );
 
   const on = useCallback(<T,>(event: string, handler: (data: T) => void) => {
-    if (socketRef.current) {
-      socketRef.current.on(event, handler);
-    }
+    getSocketInstance().on(event, handler as (...args: unknown[]) => void);
   }, []);
 
-  const off = useCallback((event: string) => {
-    if (socketRef.current) {
-      socketRef.current.off(event);
+  const off = useCallback((event: string, handler?: (...args: unknown[]) => void) => {
+    if (handler) {
+      socketInstance?.off(event, handler);
+    } else {
+      socketInstance?.off(event);
     }
   }, []);
 
   const reconnect = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.connect();
-      setIsReconnecting(true);
-      setError(null);
-    }
+    getSocketInstance().connect();
+    updateState({ isReconnecting: true, error: null });
   }, []);
 
   return {
-    getSocket: () => socketRef.current,
-    isConnected,
-    isReconnecting,
-    error,
+    getSocket,
+    isConnected: state.isConnected,
+    isReconnecting: state.isReconnecting,
+    error: state.error,
     emit,
     on,
     off,

@@ -4,9 +4,11 @@ interface ControlButtonProps {
     icon: React.ReactNode;
     label?: string;
     active?: boolean;
-    variant?: 'primary' | 'secondary' | 'danger';
+    variant?: 'primary' | 'secondary' | 'danger' | 'disabled';
+    disabled?: boolean;
+    title?: string;
     onClick?: () => void;
-    badge?: boolean | number; // Support both boolean and number
+    badge?: boolean | number;
 }
 
 export const ControlButton: React.FC<ControlButtonProps> = ({
@@ -14,10 +16,15 @@ export const ControlButton: React.FC<ControlButtonProps> = ({
     label,
     active = false,
     variant = 'secondary',
+    disabled = false,
+    title,
     onClick,
     badge = false,
 }) => {
     const getButtonStyles = () => {
+        if (variant === 'disabled' || disabled) {
+            return 'bg-gray-600/50 text-gray-400 cursor-not-allowed opacity-60';
+        }
         if (variant === 'primary') {
             return 'bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/30';
         }
@@ -33,10 +40,12 @@ export const ControlButton: React.FC<ControlButtonProps> = ({
 
     return (
         <button
-            onClick={onClick}
+            onClick={disabled ? undefined : onClick}
+            disabled={disabled}
+            title={title}
             className={`flex items-center justify-center ${label ? 'h-12 px-8' : 'w-12 h-12'
                 } rounded-full transition-all ${getButtonStyles()} relative`}
-            aria-label={label}
+            aria-label={label || title}
         >
             {/* Badge display */}
             {showBadge && (
@@ -53,3 +62,4 @@ export const ControlButton: React.FC<ControlButtonProps> = ({
         </button>
     );
 };
+

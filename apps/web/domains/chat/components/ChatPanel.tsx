@@ -5,14 +5,7 @@ import { Send, Paperclip, ChevronUp, ChevronDown } from 'lucide-react';
 import { ChatMessage } from './ChatMessage';
 import { useChatStore } from '@/domains/chat/stores/useChatStore';
 
-interface Message {
-    id: string;
-    senderId: string;
-    senderName: string;
-    senderAvatar?: string;
-    content: string;
-    timestamp: string;
-}
+import { Message } from '@/domains/room/types';
 
 interface ChatPanelProps {
     messages: Message[];
@@ -25,7 +18,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     onSendMessage,
     onAttachFile,
 }) => {
-    const [activeTab, setActiveTab] = useState<'group' | 'personal'>('group');
+    // Removed activeTab - only group chat needed
     const [inputValue, setInputValue] = useState('');
     const [collapsed, setCollapsed] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -74,40 +67,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     return (
         <div className="px-5 pt-2 pb-4 flex flex-col flex-1">
             <div className="flex items-center justify-between mb-4">
-                <h3 className="text-white font-semibold text-sm">Chats</h3>
-                <div className="flex items-center gap-2">
-                    <div className="flex bg-[#2c303f] rounded-lg p-0.5">
-                        <button
-                            onClick={() => setActiveTab('group')}
-                            className={`px-4 py-1 rounded-md text-xs font-medium transition-all ${activeTab === 'group'
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'text-gray-400 hover:text-white'
-                                }`}
-                        >
-                            Group
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('personal')}
-                            className={`px-4 py-1 rounded-md text-xs font-medium transition-all ${activeTab === 'personal'
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'text-gray-400 hover:text-white'
-                                }`}
-                        >
-                            Personal
-                        </button>
-                    </div>
-                    <button
-                        onClick={() => setCollapsed(!collapsed)}
-                        className="text-gray-400 hover:text-white transition-colors"
-                        aria-label={collapsed ? 'Expand' : 'Collapse'}
-                    >
-                        {collapsed ? (
-                            <ChevronDown className="w-5 h-5" />
-                        ) : (
-                            <ChevronUp className="w-5 h-5" />
-                        )}
-                    </button>
-                </div>
+                <h3 className="text-white font-semibold text-sm">Group Chat</h3>
+                <button
+                    onClick={() => setCollapsed(!collapsed)}
+                    className="text-gray-400 hover:text-white transition-colors"
+                    aria-label={collapsed ? 'Expand' : 'Collapse'}
+                >
+                    {collapsed ? (
+                        <ChevronDown className="w-5 h-5" />
+                    ) : (
+                        <ChevronUp className="w-5 h-5" />
+                    )}
+                </button>
             </div>
 
             {!collapsed && (

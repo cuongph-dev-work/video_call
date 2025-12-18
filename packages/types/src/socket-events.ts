@@ -3,11 +3,71 @@ import { RTCOffer, RTCAnswer, ICECandidate } from './webrtc';
 import { Participant } from './meeting';
 import { ChatMessage } from './chat';
 
+// =============================================================================
+// Unified State Types (New Extensible Design)
+// =============================================================================
+
+/**
+ * Participant state that can be synced in real-time
+ * Extensible - add new fields here for future features
+ */
+export interface ParticipantState {
+  audioEnabled?: boolean;
+  videoEnabled?: boolean;
+  isScreenSharing?: boolean;
+  isSpeaking?: boolean;        // Future: active speaker detection
+  handRaised?: boolean;        // Future: raise hand feature
+  displayName?: string;        // Display name change
+  // Add more states here as needed
+}
+
+/**
+ * Room permissions that host can control
+ */
+export interface RoomPermissions {
+  allowMicrophone: boolean;
+  allowCamera: boolean;
+  allowScreenShare: boolean;
+  allowChat: boolean;
+}
+
+/**
+ * Room settings that can be synced in real-time
+ */
+export interface RoomSettingsState {
+  permissions?: Partial<RoomPermissions>;
+  lockRoom?: boolean;
+  requirePassword?: boolean;
+  password?: string;           // Only sent when updating, not broadcast
+  roomName?: string;
+  // Add more settings here as needed
+}
+
+// =============================================================================
 // Client to Server Events
+// =============================================================================
+
 export interface ClientToServerEvents {
+  // --- Unified Events (New) ---
+  'participant:state': (data: {
+    roomId: string;
+    state: ParticipantState;
+  }) => void;
+
+  'room:settings': (data: {
+    roomId: string;
+    settings: RoomSettingsState;
+  }) => void;
+
+  'room:get-settings': (data: { roomId: string }) => void;
+
+  // --- Legacy Events (Keep for backward compatibility) ---
   'join-room': (data: {
     roomId: string;
     displayName: string;
+    userId?: string;
+    audioEnabled?: boolean;
+    videoEnabled?: boolean;
     password?: string;
   }) => void;
 
@@ -45,11 +105,34 @@ export interface ClientToServerEvents {
   'reject-user': (data: { roomId: string; userId: string }) => void;
 }
 
+// =============================================================================
 // Server to Client Events
+// =============================================================================
+
 export interface ServerToClientEvents {
+  // --- Unified Events (New) ---
+  'participant:state-changed': (data: {
+    userId: string;
+    state: ParticipantState;
+    timestamp: number;
+  }) => void;
+
+  'room:settings-changed': (data: {
+    settings: RoomSettingsState;
+    changedBy: string;
+    timestamp: number;
+  }) => void;
+
+  'room:settings-sync': (data: {
+    settings: RoomSettingsState;
+  }) => void;
+
+  // --- Legacy Events (Keep for backward compatibility) ---
   'room-joined': (data: {
     roomId: string;
     participants: Participant[];
+    isHost?: boolean;
+    settings?: RoomSettingsState;
   }) => void;
 
   'user-joined': (data: { participant: Participant }) => void;
@@ -114,3 +197,4 @@ export enum SocketErrorCode {
   NOT_HOST = 'NOT_HOST',
   INVALID_PARTICIPANT = 'INVALID_PARTICIPANT',
 }
+

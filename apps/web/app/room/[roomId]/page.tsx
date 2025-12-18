@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useSocket } from '@/shared/hooks/useSocket';
@@ -11,8 +11,18 @@ import { useMediaRecorder } from '@/domains/media/hooks/useMediaRecorder';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import { useChatStore } from '@/domains/chat/stores/useChatStore';
 import { usePreferencesStore } from '@/shared/stores/usePreferencesStore';
+import { useResponsive } from '@/shared/hooks/useResponsive';
 
-// New components
+// Hooks
+import { useRoomAccess } from '@/domains/room/hooks/useRoomAccess';
+import { useRoomEvents } from '@/domains/room/hooks/useRoomEvents';
+import { useRemoteStreams } from '@/domains/room/hooks/useRemoteStreams';
+import { useParticipantSync } from '@/domains/room/hooks/useParticipantSync';
+
+// Types
+import { Participant } from '@/domains/room/types';
+
+// Components
 import { RoomHeader } from '@/domains/room/components/RoomHeader';
 import { VideoSection } from '@/domains/room/components/VideoSection';
 import { ControlBar } from '@/domains/room/components/ControlBar';
@@ -22,42 +32,27 @@ import { WaitingUsersNotification } from '@/shared/components/WaitingUsersNotifi
 import { RecordingIndicator } from '@/domains/media/components/RecordingIndicator';
 import { KeyboardShortcutsHelp } from '@/shared/components/KeyboardShortcutsHelp';
 import { WaitingRoomScreen } from '@/domains/room/components/WaitingRoomScreen';
-import { roomApi } from '@/shared/api/room-api';
-import type { WaitingUser } from '../../../../../packages/types/src/waiting-room';
+import { ConnectionStatus } from '@/shared/components/ConnectionStatus';
+import { PasswordModal } from '@/shared/components/PasswordModal';
+import { MobileChat } from '@/domains/chat/components/MobileChat';
 
-// Lazy load RoomSettingsModal
 const RoomSettingsModal = dynamic(
     () => import('@/domains/settings/components').then((mod) => mod.RoomSettingsModal),
     { ssr: false }
 );
 
-interface Participant {
-    id: string;
-    displayName: string;
-    avatar?: string;
-    audioEnabled: boolean;
-    videoEnabled: boolean;
-    isScreenSharing?: boolean;
-}
-
-interface Message {
-    id: string;
-    senderId: string;
-    senderName: string;
-    senderAvatar?: string;
-    content: string;
-    timestamp: string;
-}
-
 export default function RoomPage() {
     const params = useParams();
     const router = useRouter();
     const roomId = params.roomId as string;
-    const [isJoined, setIsJoined] = useState(false);
-    const [displayName, setDisplayName] = useState('');
-    const [isCheckingHost, setIsCheckingHost] = useState(true); // Loading state for host check
+    const { isMobile } = useResponsive();
 
-    const { getSocket, isConnected } = useSocket();
+    // Store
+    const { messages: storeMessages } = useChatStore();
+    const userId = usePreferencesStore(state => state.userId);
+
+    // Socket & Media
+    const { getSocket, isConnected, reconnect } = useSocket();
     const {
         stream: localStream,
         audioEnabled,
@@ -76,182 +71,94 @@ export default function RoomPage() {
     } = useLocalStream();
 
     const { isSharing, screenStream, startScreenShare, stopScreenShare } = useScreenShare(getSocket);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { addMessage } = useChatStore();
 
+    // UI State
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+    const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+
+    // Custom Hooks
+    const {
+        isJoined,
+        displayName,
+        isCheckingHost,
+        isInWaitingRoom,
+        isHost,
+        permissions,
+        showPasswordModal,
+        passwordError,
+        isValidatingPassword,
+        setShowPasswordModal,
+        handleJoin,
+        handlePasswordSubmit
+    } = useRoomAccess(roomId);
+
+    const { remoteStreamsList } = useRemoteStreams();
+
+    const {
+        participants,
+        waitingUsers,
+        handleSendMessage,
+        handleAdmitUser,
+        handleRejectUser
+    } = useRoomEvents({
+        roomId,
+        isJoined,
+        displayName,
+        userId: userId || '',
+        isMobile,
+        isChatOpen,
+        audioEnabled,
+        videoEnabled,
+    });
+
+    // Peer Connection
     usePeerConnection({
         localStream: isSharing ? screenStream : localStream,
         socket: getSocket(),
         roomId,
     });
 
-    const [remoteStreamsList, setRemoteStreamsList] = useState<Array<{ id: string; stream: MediaStream }>>([]);
-    const [participants, setParticipants] = useState<Participant[]>([]);
-    const [messages, setMessages] = useState<Message[]>([]);
-    const [waitingUsers, setWaitingUsers] = useState<WaitingUser[]>([]);
-    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-    const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
-
     // Recording - use combined stream (screen share or local)
     const recordingStream = isSharing ? screenStream : localStream;
     const {
         isRecording,
-        duration: recordingDuration,
         startRecording,
         stopRecording,
         formatDuration,
     } = useMediaRecorder(recordingStream);
 
-    // Track if already joined to prevent re-joining on HMR
-    const hasJoinedRef = useRef(false);
+    // Participant sync - emit state changes to other participants
+    const { updateAudio, updateVideo, updateScreenShare } = useParticipantSync({
+        roomId,
+        isJoined,
+        onStateChanged: (userId, state) => {
+            // State changes are handled by useRoomEvents
+            console.log('Participant state changed:', userId, state);
+        },
+    });
 
-    const userId = usePreferencesStore(state => state.userId);
-    const storedDisplayName = usePreferencesStore(state => state.displayName);
+    // Event handlers wrapping socket emissions (UI actions)
+    const handleToggleAudio = useCallback(() => {
+        toggleAudio();
+        updateAudio(!audioEnabled);
+    }, [toggleAudio, updateAudio, audioEnabled]);
 
-    // Auto-join for room host (bypass pre-join screen)
-    useEffect(() => {
-        const checkAndAutoJoin = async () => {
-            if (!userId || !storedDisplayName) {
-                setIsCheckingHost(false);
-                return;
-            }
+    const handleToggleVideo = useCallback(() => {
+        toggleVideo();
+        updateVideo(!videoEnabled);
+    }, [toggleVideo, updateVideo, videoEnabled]);
 
-            try {
-                const { isHost } = await roomApi.checkRoomHost(roomId, userId);
-                if (isHost) {
-                    setDisplayName(storedDisplayName);
-                    setIsJoined(true);
-                }
-            } catch (error) {
-                // Silently fail - user will go through normal pre-join flow
-                console.log('Could not check host status:', error);
-            } finally {
-                setIsCheckingHost(false);
-            }
-        };
-
-        checkAndAutoJoin();
-    }, [roomId, userId, storedDisplayName]);
-
-    // Join room when socket connects (AND user has joined via UI)
-    useEffect(() => {
-        const socket = getSocket();
-        if (socket && isConnected && roomId && !hasJoinedRef.current && isJoined && displayName) {
-            hasJoinedRef.current = true;
-
-            // Use current values from state at time of join
-            const currentUserId = userId;
-            const currentDisplayName = displayName;
-
-            socket.emit('join-room', {
-                roomId,
-                userId: currentUserId,
-                displayName: currentDisplayName,
-            });
-
-            socket.on('room-joined', (data: { roomId: string; participants: Participant[] }) => {
-                setParticipants(data.participants || []);
-
-                // Request waiting users list immediately after joining
-                // This catches any users who joined waiting room before we setup listeners
-                socket.emit('get-waiting-users', { roomId });
-            });
-
-            socket.on('user-joined', (data: { participant: Participant }) => {
-                setParticipants(prev => {
-                    // Prevent duplicates
-                    if (prev.find(p => p.id === data.participant.id)) return prev;
-                    return [...prev, data.participant];
-                });
-            });
-
-            socket.on('user-left', (data: { userId: string }) => {
-                setParticipants(prev => prev.filter(p => p.id !== data.userId));
-            });
-
-            socket.on('participant-audio-changed', (data: { userId: string; enabled: boolean }) => {
-                setParticipants(prev =>
-                    prev.map(p => (p.id === data.userId ? { ...p, audioEnabled: data.enabled } : p))
-                );
-            });
-
-            socket.on('participant-video-changed', (data: { userId: string; enabled: boolean }) => {
-                setParticipants(prev =>
-                    prev.map(p => (p.id === data.userId ? { ...p, videoEnabled: data.enabled } : p))
-                );
-            });
-
-            // Chat message listener
-            socket.on('chat-message', (data: Message) => {
-                setMessages(prev => [...prev, data]);
-            });
-
-            // Waiting room listeners
-            socket.on('user-waiting', (data: { user: WaitingUser; waitingCount: number }) => {
-                console.log('🔔 Received user-waiting event:', data);
-                setWaitingUsers(prev => {
-                    // Check if user already in list
-                    if (prev.find(u => u.id === data.user.id)) return prev;
-                    return [...prev, data.user];
-                });
-            });
-
-            socket.on('waiting-count-updated', () => {
-                // Get fresh list from server if count changed
-                socket.emit('get-waiting-users', { roomId });
-            });
-
-            socket.on('waiting-users-list', (data: { roomId: string; users: WaitingUser[] }) => {
-                console.log('📋 Received waiting-users-list:', data.users);
-                setWaitingUsers(data.users);
-            });
+    const handleToggleScreenShare = useCallback(async () => {
+        if (isSharing) {
+            stopScreenShare(roomId);
+            updateScreenShare(false);
+        } else {
+            await startScreenShare(roomId);
+            updateScreenShare(true);
         }
+    }, [isSharing, stopScreenShare, roomId, startScreenShare, updateScreenShare]);
 
-        return () => {
-            // Only remove listeners if we actually joined or if socket exists
-            if (socket) {
-                socket.off('room-joined');
-                socket.off('user-joined');
-                socket.off('user-left');
-                socket.off('participant-audio-changed');
-                socket.off('participant-video-changed');
-                socket.off('chat-message');
-                socket.off('user-waiting');
-                socket.off('waiting-count-updated');
-                socket.off('waiting-users-list');
-            }
-            // DON'T reset hasJoinedRef here - it causes re-join on HMR
-            // The ref persists across re-renders to prevent duplicate joins
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [getSocket, isConnected, roomId, isJoined]); // Only essential deps, capture userId/displayName at join time
-
-    // Listen for remote stream events
-    useEffect(() => {
-        const handleRemoteStreamAdded = (event: CustomEvent) => {
-            const { peerId, stream } = event.detail;
-            setRemoteStreamsList(prev => {
-                const existing = prev.find(s => s.id === peerId);
-                if (existing) return prev;
-                return [...prev, { id: peerId, stream }];
-            });
-        };
-
-        const handleRemoteStreamRemoved = (event: CustomEvent) => {
-            const { peerId } = event.detail;
-            setRemoteStreamsList(prev => prev.filter(s => s.id !== peerId));
-        };
-
-        window.addEventListener('remote-stream-added', handleRemoteStreamAdded as EventListener);
-        window.addEventListener('remote-stream-removed', handleRemoteStreamRemoved as EventListener);
-
-        return () => {
-            window.removeEventListener('remote-stream-added', handleRemoteStreamAdded as EventListener);
-            window.removeEventListener('remote-stream-removed', handleRemoteStreamRemoved as EventListener);
-        };
-    }, []);
-
-    // Event handlers
     const handleEndCall = useCallback(() => {
         const socket = getSocket();
         if (socket && isJoined) {
@@ -264,124 +171,7 @@ export default function RoomPage() {
         router.push('/');
     }, [getSocket, roomId, stopStream, isSharing, stopScreenShare, router, isJoined]);
 
-    const handleToggleAudio = useCallback(() => {
-        toggleAudio();
-        const socket = getSocket();
-        if (socket) {
-            socket.emit('toggle-audio', { roomId, enabled: !audioEnabled });
-        }
-    }, [toggleAudio, getSocket, roomId, audioEnabled]);
-
-    const handleToggleVideo = useCallback(() => {
-        toggleVideo();
-        const socket = getSocket();
-        if (socket) {
-            socket.emit('toggle-video', { roomId, enabled: !videoEnabled });
-        }
-    }, [toggleVideo, getSocket, roomId, videoEnabled]);
-
-    const handleToggleScreenShare = useCallback(async () => {
-        if (isSharing) {
-            stopScreenShare(roomId);
-        } else {
-            await startScreenShare(roomId);
-        }
-    }, [isSharing, stopScreenShare, roomId, startScreenShare]);
-
-    const handleSendMessage = useCallback((content: string) => {
-        const socket = getSocket();
-        if (socket) {
-            const message: Message = {
-                id: Date.now().toString(),
-                senderId: socket.id || 'unknown',
-                senderName: displayName,
-                content,
-                timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-            };
-            socket.emit('chat-message', { roomId, message });
-            setMessages(prev => [...prev, message]);
-        }
-    }, [getSocket, displayName, roomId]);
-
-    // Waiting room handlers
-    const handleAdmitUser = useCallback((userId: string) => {
-        const socket = getSocket();
-        if (socket) {
-            socket.emit('admit-user', { roomId, userId });
-            // Remove from local state immediately for better UX
-            setWaitingUsers(prev => prev.filter(u => u.id !== userId));
-        }
-    }, [getSocket, roomId]);
-
-    const handleRejectUser = useCallback((userId: string) => {
-        const socket = getSocket();
-        if (socket) {
-            socket.emit('reject-user', { roomId, userId, reason: 'Access denied' });
-            // Remove from local state immediately
-            setWaitingUsers(prev => prev.filter(u => u.id !== userId));
-        }
-    }, [getSocket, roomId]);
-
-    // Waiting room state
-    const [isInWaitingRoom, setIsInWaitingRoom] = useState(false);
-
-    // PRE-JOIN HANDLER
-    const handleJoin = async (name: string) => {
-        setDisplayName(name);
-
-        try {
-            // Check room access
-            const access = await roomApi.checkAccess(roomId);
-
-            if (access.waitingRoomEnabled) {
-                // Join waiting room
-                setIsInWaitingRoom(true);
-                const socket = getSocket();
-                if (socket) {
-                    socket.emit('join-waiting-room', { roomId, displayName: name });
-                }
-            } else {
-                // Join directly
-                setIsJoined(true);
-            }
-        } catch (error) {
-            console.error('Failed to check access:', error);
-            // Fallback: try to join directly or show error
-            // For now, assume open if check fails (or maybe block?)
-            // setStreamError('Failed to connect to room'); // reuse stream error or add new one
-            // Let's try to join and let backend handle it
-            setIsJoined(true);
-        }
-    };
-
-    // Listen for admission
-    useEffect(() => {
-        const socket = getSocket();
-        if (socket && isInWaitingRoom) {
-            const handleAdmitted = () => {
-                setIsInWaitingRoom(false);
-                setIsJoined(true);
-            };
-
-            const handleRejected = (data: { message: string }) => {
-                // Handle rejection (e.g., redirect home or show message)
-                alert(data.message || 'You were denied access to the room.');
-                setIsInWaitingRoom(false);
-                router.push('/');
-            };
-
-            socket.on('admitted', handleAdmitted);
-            socket.on('rejected', handleRejected);
-
-            return () => {
-                socket.off('admitted', handleAdmitted);
-                socket.off('rejected', handleRejected);
-            };
-        }
-    }, [getSocket, isInWaitingRoom, router]);
-
-
-    // Keyboard shortcuts - must be after all handlers
+    // Keyboard Shortcuts
     useKeyboardShortcuts({
         onToggleMic: handleToggleAudio,
         onToggleVideo: handleToggleVideo,
@@ -389,28 +179,28 @@ export default function RoomPage() {
         onToggleRecording: isRecording ? stopRecording : startRecording,
         onEndCall: handleEndCall,
         onShowHelp: () => setShowShortcutsHelp(prev => !prev),
-        enabled: isJoined, // Only enable shortcuts when joined
+        enabled: isJoined,
     });
 
     // Prepare participants data for components (deduplicate)
     const participantsForSidebar: Participant[] = useMemo(() => {
-        const socketId = getSocket()?.id || 'local';
+        // Use userId from store for deduplication (backend uses userId, not socket.id)
         const localParticipant: Participant = {
-            id: socketId,
+            id: userId || 'local',
             displayName: displayName + ' (You)',
             audioEnabled,
             videoEnabled,
         };
 
-        // Filter out duplicates and self
+        // Filter out self (by userId) and duplicates
         const uniqueRemote = participants.filter(
             (p, index, self) =>
-                p.id !== socketId &&
+                p.id !== userId &&
                 self.findIndex(x => x.id === p.id) === index
         );
 
         return [localParticipant, ...uniqueRemote];
-    }, [getSocket, displayName, audioEnabled, videoEnabled, participants]);
+    }, [userId, displayName, audioEnabled, videoEnabled, participants]);
 
     // Prepare video participants (only first 4 for thumbnails)
     const videoParticipants = useMemo(() => {
@@ -433,7 +223,7 @@ export default function RoomPage() {
         time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
     }), []);
 
-    // Show loading while checking if user is host
+    // Render logic
     if (isCheckingHost) {
         return (
             <div className="flex items-center justify-center h-screen bg-[#0b0e11]">
@@ -507,8 +297,11 @@ export default function RoomPage() {
                 <div className="flex-1 flex flex-col gap-4 min-w-0">
                     <VideoSection
                         mainSpeaker={{
-                            stream: (isSharing ? screenStream : localStream) || undefined,
+                            stream: isSharing
+                                ? screenStream || undefined
+                                : (videoEnabled ? localStream : undefined) || undefined,
                             displayName: displayName + (isSharing ? ' (Screen)' : ''),
+                            audioEnabled,
                         }}
                         participants={videoParticipants}
                         recordingTime={formatDuration()}
@@ -519,27 +312,30 @@ export default function RoomPage() {
                         audioEnabled={audioEnabled}
                         videoEnabled={videoEnabled}
                         screenSharing={isSharing}
-                        recording={isRecording}
+                        isHost={isHost}
+                        permissions={permissions}
                         onToggleAudio={handleToggleAudio}
                         onToggleVideo={handleToggleVideo}
                         onToggleScreenShare={handleToggleScreenShare}
-                        onToggleRecording={() => {
-                            if (isRecording) {
-                                stopRecording();
-                            } else {
-                                startRecording();
-                            }
-                        }}
+                        onToggleChat={isMobile ? () => setIsChatOpen(prev => !prev) : undefined}
                         onEndCall={handleEndCall}
                     />
                 </div>
 
                 <Sidebar
                     participants={participantsForSidebar}
-                    messages={messages}
+                    messages={storeMessages}
                     onSendMessage={handleSendMessage}
                 />
             </main>
+
+            {/* Mobile Chat */}
+            <MobileChat
+                isOpen={isChatOpen}
+                onClose={() => setIsChatOpen(false)}
+                messages={storeMessages}
+                onSendMessage={handleSendMessage}
+            />
 
             {/* Room Settings Modal */}
             {isSettingsModalOpen && (
@@ -551,10 +347,27 @@ export default function RoomPage() {
                 />
             )}
 
-            {/* Keyboard Shortcuts Help Modal */}
-            <KeyboardShortcutsHelp
-                isOpen={showShortcutsHelp}
-                onClose={() => setShowShortcutsHelp(false)}
+            {/* Keyboard Shortcuts Help */}
+            {showShortcutsHelp && (
+                <KeyboardShortcutsHelp
+                    isOpen={showShortcutsHelp}
+                    onClose={() => setShowShortcutsHelp(false)}
+                />
+            )}
+
+            {/* Connection Status Indicator */}
+            <ConnectionStatus
+                isConnected={isConnected}
+                onRetry={reconnect}
+            />
+
+            {/* Password Modal */}
+            <PasswordModal
+                isOpen={showPasswordModal}
+                onClose={() => setShowPasswordModal(false)}
+                onSubmit={handlePasswordSubmit}
+                error={passwordError}
+                isValidating={isValidatingPassword}
             />
         </div>
     );

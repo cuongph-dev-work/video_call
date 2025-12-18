@@ -39,6 +39,7 @@ export class SignalingGateway
   server!: Server;
 
   private readonly logger = new Logger(SignalingGateway.name);
+  private socketIdToUserId = new Map<string, string>();
 
   constructor(
     private readonly roomsService: RoomsService,
@@ -53,8 +54,19 @@ export class SignalingGateway
   async handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
 
-    // Clean up user from any rooms they were in
-    await this.roomsService.handleDisconnect(client.id);
+    const userId = this.socketIdToUserId.get(client.id);
+    if (userId) {
+      // Clean up user from any rooms they were in
+      await this.roomsService.handleDisconnect(userId);
+      this.socketIdToUserId.delete(client.id);
+
+      // We don't have roomId here, so we can't emit user-left easily to a specific room
+      // However, handleDisconnect in roomsService should handle the cleanup.
+      // We might need to track which room the user was in if we want to emit user-left.
+    } else {
+      // Fallback to client.id for legacy or if userId not found
+      await this.roomsService.handleDisconnect(client.id);
+    }
   }
 
   @SubscribeMessage('join-room')
@@ -66,22 +78,20 @@ export class SignalingGateway
       userId: string;
       displayName: string;
       password?: string;
+      audioEnabled?: boolean;
+      videoEnabled?: boolean;
     },
   ) {
     try {
-      const { roomId, userId, displayName, password } = data;
+      const { roomId, userId, displayName, password, audioEnabled = true, videoEnabled = true } = data;
 
       // Validate password if required
-      const requiresPassword =
-        await this.roomSettingsService.requiresPassword(roomId);
+      const requiresPassword = await this.roomSettingsService.requiresPassword(roomId);
       if (requiresPassword) {
         if (!password) {
           throw new Error('PASSWORD_REQUIRED');
         }
-        const isValid = await this.roomSettingsService.validatePassword(
-          roomId,
-          password,
-        );
+        const isValid = await this.roomSettingsService.validatePassword(roomId, password);
         if (!isValid) {
           throw new Error('INVALID_PASSWORD');
         }
@@ -94,25 +104,26 @@ export class SignalingGateway
       }
 
       // Join the room
-      const participants = await this.roomsService.joinRoom(
-        roomId,
-        userId, // Use provided userId (UUID) instead of client.id
-        displayName,
-      );
+      const participants = await this.roomsService.joinRoom(roomId, userId, displayName);
 
-      // Join Socket.IO room
+      // Store socket ID to user ID mapping
+      this.socketIdToUserId.set(client.id, userId);
+
+      // Join Socket.IO room for this meeting
       void client.join(roomId);
+      // Join individual room for this user (to receive private messages)
+      void client.join(userId);
 
       // Notify the user they've joined
       client.emit('room-joined', { roomId, participants });
 
-      // Notify others in the room
+      // Notify others in the room with actual device status
       client.to(roomId).emit('user-joined', {
         participant: {
-          id: userId, // Use persistent userId
+          id: userId,
           displayName,
-          audioEnabled: true,
-          videoEnabled: true,
+          audioEnabled,
+          videoEnabled,
           isHost: participants.find((p) => p.id === userId)?.isHost || false,
         },
       });
@@ -120,10 +131,7 @@ export class SignalingGateway
       this.logger.log(`${displayName} joined room ${roomId}`);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      client.emit('error', {
-        code: message,
-        message: 'Failed to join room',
-      });
+      client.emit('error', { code: message, message: 'Failed to join room' });
     }
   }
 
@@ -133,14 +141,15 @@ export class SignalingGateway
     @MessageBody() data: { roomId: string },
   ) {
     const { roomId } = data;
+    const userId = this.socketIdToUserId.get(client.id) || client.id;
 
-    await this.roomsService.leaveRoom(roomId, client.id);
+    await this.roomsService.leaveRoom(roomId, userId);
     void client.leave(roomId);
 
     // Notify others
-    client.to(roomId).emit('user-left', { userId: client.id });
+    client.to(roomId).emit('user-left', { userId });
 
-    this.logger.log(`User ${client.id} left room ${roomId}`);
+    this.logger.log(`User ${userId} left room ${roomId}`);
   }
 
   @SubscribeMessage('offer')
@@ -148,9 +157,10 @@ export class SignalingGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { to: string; offer: RTCSessionDescriptionInit },
   ) {
-    this.logger.log(`Forwarding offer from ${client.id} to ${data.to}`);
+    const fromUserId = this.socketIdToUserId.get(client.id) || client.id;
+    this.logger.log(`Forwarding offer from ${fromUserId} to ${data.to}`);
     this.server.to(data.to).emit('offer', {
-      from: client.id,
+      from: fromUserId,
       offer: data.offer,
     });
   }
@@ -160,9 +170,10 @@ export class SignalingGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { to: string; answer: RTCSessionDescriptionInit },
   ) {
-    this.logger.log(`Forwarding answer from ${client.id} to ${data.to}`);
+    const fromUserId = this.socketIdToUserId.get(client.id) || client.id;
+    this.logger.log(`Forwarding answer from ${fromUserId} to ${data.to}`);
     this.server.to(data.to).emit('answer', {
-      from: client.id,
+      from: fromUserId,
       answer: data.answer,
     });
   }
@@ -172,8 +183,9 @@ export class SignalingGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { to: string; candidate: RTCIceCandidateInit },
   ) {
+    const fromUserId = this.socketIdToUserId.get(client.id) || client.id;
     this.server.to(data.to).emit('ice-candidate', {
-      from: client.id,
+      from: fromUserId,
       candidate: data.candidate,
     });
   }
@@ -184,8 +196,9 @@ export class SignalingGateway
     @MessageBody() data: { roomId: string; enabled: boolean },
   ) {
     const { roomId, enabled } = data;
+    const userId = this.socketIdToUserId.get(client.id) || client.id;
     client.to(roomId).emit('participant-audio-changed', {
-      userId: client.id,
+      userId,
       enabled,
     });
   }
@@ -196,8 +209,9 @@ export class SignalingGateway
     @MessageBody() data: { roomId: string; enabled: boolean },
   ) {
     const { roomId, enabled } = data;
+    const userId = this.socketIdToUserId.get(client.id) || client.id;
     client.to(roomId).emit('participant-video-changed', {
-      userId: client.id,
+      userId,
       enabled,
     });
   }
@@ -208,8 +222,9 @@ export class SignalingGateway
     @MessageBody() data: { roomId: string; displayName: string },
   ) {
     const { roomId, displayName } = data;
+    const userId = this.socketIdToUserId.get(client.id) || client.id;
     client.to(roomId).emit('screen-share-started', {
-      userId: client.id,
+      userId,
       displayName,
     });
   }
@@ -220,8 +235,9 @@ export class SignalingGateway
     @MessageBody() data: { roomId: string },
   ) {
     const { roomId } = data;
+    const userId = this.socketIdToUserId.get(client.id) || client.id;
     client.to(roomId).emit('screen-share-stopped', {
-      userId: client.id,
+      userId,
     });
   }
 
@@ -236,13 +252,14 @@ export class SignalingGateway
       recipientId?: string;
     },
   ) {
+    const userId = this.socketIdToUserId.get(client.id) || client.id;
     // Get participant info from room
     const participants = await this.roomsService.getParticipants(data.roomId);
-    const sender = participants.find((p) => p.id === client.id);
+    const sender = participants.find((p) => p.id === userId);
 
     const message = {
       id: Date.now().toString(),
-      senderId: client.id,
+      senderId: userId,
       senderName: sender?.displayName || 'User',
       content: data.content,
       timestamp: new Date(),
@@ -251,7 +268,7 @@ export class SignalingGateway
     };
 
     if (data.isPrivate && data.recipientId) {
-      // Send to specific user
+      // Send to specific user room (their UUID)
       this.server.to(data.recipientId).emit('chat-message', message);
       client.emit('chat-message', message); // Also send to sender
     } else {
@@ -267,18 +284,21 @@ export class SignalingGateway
   @SubscribeMessage('join-waiting-room')
   async handleJoinWaitingRoom(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomId: string; displayName: string },
+    @MessageBody()
+    data: { roomId: string; userId: string; displayName: string },
   ) {
     try {
-      const { roomId, displayName } = data;
+      const { roomId, userId, displayName } = data;
 
-      // Join socket room first so waiting user can receive admitted/rejected events
-      void client.join(roomId);
+      // Join individual room for this user (to receive admitted/rejected events)
+      void client.join(userId);
+      // Store socket ID to user ID mapping
+      this.socketIdToUserId.set(client.id, userId);
 
       // Add to waiting queue
       await this.waitingRoomService.addToWaitingQueue(
         roomId,
-        client.id,
+        userId,
         displayName,
       );
 
@@ -290,7 +310,7 @@ export class SignalingGateway
 
       // Notify host/participants in room about new waiting user
       const waitingUser = {
-        id: client.id,
+        id: userId,
         displayName,
         joinedAt: new Date(),
       };
@@ -298,7 +318,7 @@ export class SignalingGateway
       const waitingCount =
         await this.waitingRoomService.getWaitingCount(roomId);
 
-      // Emit to all in room (including the waiting user who just joined)
+      // Emit to all in room
       this.server.to(roomId).emit('user-waiting', {
         user: waitingUser,
         waitingCount,
@@ -424,4 +444,150 @@ export class SignalingGateway
       });
     }
   }
+
+  // =============================================================================
+  // Unified Events (New Extensible Design)
+  // =============================================================================
+
+  /**
+   * Handle participant state changes (mic, camera, screen share, etc.)
+   * Broadcasts to all other participants in the room
+   */
+  @SubscribeMessage('participant:state')
+  handleParticipantState(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    data: {
+      roomId: string;
+      state: {
+        audioEnabled?: boolean;
+        videoEnabled?: boolean;
+        isScreenSharing?: boolean;
+        isSpeaking?: boolean;
+        handRaised?: boolean;
+        displayName?: string;
+      };
+    },
+  ) {
+    const { roomId, state } = data;
+    const userId = this.socketIdToUserId.get(client.id) || client.id;
+
+    this.logger.debug(`Participant ${userId} state change in room ${roomId}:`, state);
+
+    // Broadcast to all other participants in the room
+    client.to(roomId).emit('participant:state-changed', {
+      userId,
+      state,
+      timestamp: Date.now(),
+    });
+
+    // Also emit legacy events for backward compatibility
+    if (state.audioEnabled !== undefined) {
+      client.to(roomId).emit('participant-audio-changed', {
+        userId,
+        enabled: state.audioEnabled,
+      });
+    }
+    if (state.videoEnabled !== undefined) {
+      client.to(roomId).emit('participant-video-changed', {
+        userId,
+        enabled: state.videoEnabled,
+      });
+    }
+  }
+
+  /**
+   * Handle room settings updates (host only)
+   * Broadcasts to all participants in the room
+   */
+  @SubscribeMessage('room:settings')
+  async handleRoomSettings(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    data: {
+      roomId: string;
+      settings: {
+        permissions?: {
+          allowMicrophone?: boolean;
+          allowCamera?: boolean;
+          allowScreenShare?: boolean;
+          allowChat?: boolean;
+        };
+        lockRoom?: boolean;
+        requirePassword?: boolean;
+        password?: string;
+        roomName?: string;
+      };
+    },
+  ) {
+    const { roomId, settings } = data;
+    const userId = this.socketIdToUserId.get(client.id) || client.id;
+
+    try {
+      // Verify user is host
+      const room = await this.roomsService.getRoomInfo(roomId);
+      if (!room || room.hostId !== userId) {
+        client.emit('error', {
+          code: 'NOT_HOST',
+          message: 'Only the host can update room settings',
+        });
+        return;
+      }
+
+      // Update settings in service
+      await this.roomSettingsService.updateSettings(roomId, {
+        permissions: settings.permissions,
+        lockRoom: settings.lockRoom,
+        requirePassword: settings.requirePassword,
+        password: settings.password,
+        roomName: settings.roomName,
+      });
+
+      // Broadcast to all participants (excluding password)
+      const broadcastSettings = { ...settings };
+      delete broadcastSettings.password;
+
+      this.server.to(roomId).emit('room:settings-changed', {
+        settings: broadcastSettings,
+        changedBy: userId,
+        timestamp: Date.now(),
+      });
+
+      this.logger.log(`Room ${roomId} settings updated by host ${userId}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      client.emit('error', {
+        code: message,
+        message: 'Failed to update room settings',
+      });
+    }
+  }
+
+  /**
+   * Get current room settings
+   */
+  @SubscribeMessage('room:get-settings')
+  async handleGetRoomSettings(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { roomId: string },
+  ) {
+    try {
+      const { roomId } = data;
+      const settings = await this.roomSettingsService.getSettings(roomId);
+      
+      // Get public settings (without password)
+      const publicSettings = await this.roomSettingsService.getPublicSettings(roomId);
+
+      client.emit('room:settings-sync', {
+        settings: publicSettings || settings,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      client.emit('error', {
+        code: message,
+        message: 'Failed to get room settings',
+      });
+    }
+  }
 }
+

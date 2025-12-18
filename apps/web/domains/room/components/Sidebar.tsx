@@ -3,22 +3,7 @@ import { ParticipantsPanel } from '@/domains/participant/components/Participants
 import { ChatPanel } from '@/domains/chat/components/ChatPanel';
 import { useResponsive } from '@/shared/hooks/useResponsive';
 
-interface Participant {
-    id: string;
-    displayName: string;
-    avatar?: string;
-    audioEnabled: boolean;
-    videoEnabled: boolean;
-}
-
-interface Message {
-    id: string;
-    senderId: string;
-    senderName: string;
-    senderAvatar?: string;
-    content: string;
-    timestamp: string;
-}
+import { Participant, Message } from '@/domains/room/types';
 
 interface SidebarProps {
     participants: Participant[];

@@ -7,7 +7,7 @@ export interface ChatMessage {
   senderId: string;
   senderName: string;
   content: string;
-  timestamp: Date;
+  timestamp: string;
   isPrivate: boolean;
   recipientId?: string;
 }
@@ -15,7 +15,7 @@ export interface ChatMessage {
 interface ChatState {
   messages: ChatMessage[];
   unreadCount: number;
-  addMessage: (message: ChatMessage) => void;
+  addMessage: (message: ChatMessage, incrementUnread?: boolean) => void;
   clearMessages: () => void;
   markAsRead: () => void;
 }
@@ -24,10 +24,10 @@ export const useChatStore = create<ChatState>((set) => ({
   messages: [],
   unreadCount: 0,
   
-  addMessage: (message) =>
+  addMessage: (message, incrementUnread = true) =>
     set((state) => ({
       messages: [...state.messages, message],
-      unreadCount: state.unreadCount + 1,
+      unreadCount: incrementUnread ? state.unreadCount + 1 : state.unreadCount,
     })),
   
   clearMessages: () =>

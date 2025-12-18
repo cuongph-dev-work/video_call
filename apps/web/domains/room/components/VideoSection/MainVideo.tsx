@@ -1,11 +1,12 @@
 import React, { useRef, useEffect } from 'react';
-import { Maximize, Radio } from 'lucide-react';
+import { Maximize, Mic, MicOff } from 'lucide-react';
 
 interface MainVideoProps {
     stream?: MediaStream;
-    displayName: string;
+    displayName?: string;
     recordingTime?: string;
     isRecording?: boolean;
+    audioEnabled?: boolean;
     onFullscreen?: () => void;
 }
 
@@ -14,6 +15,7 @@ export const MainVideo: React.FC<MainVideoProps> = ({
     displayName,
     recordingTime,
     isRecording = false,
+    audioEnabled = true,
     onFullscreen,
 }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -60,14 +62,16 @@ export const MainVideo: React.FC<MainVideoProps> = ({
             )}
 
             {/* Speaker name */}
-            <div className="absolute bottom-6 left-6 bg-black/40 backdrop-blur-md px-4 py-2 rounded-xl">
-                <span className="font-medium text-white text-lg">{displayName}</span>
-            </div>
+            {displayName && (
+                <div className="absolute bottom-6 left-6 bg-black/40 backdrop-blur-md px-4 py-2 rounded-xl">
+                    <span className="font-medium text-white text-lg">{displayName}</span>
+                </div>
+            )}
 
             {/* Audio indicator */}
             <div className="absolute bottom-6 right-6">
-                <div className="w-10 h-10 bg-black/30 backdrop-blur-md rounded-full flex items-center justify-center text-white">
-                    <Radio className="w-5 h-5" />
+                <div className={`w-10 h-10 backdrop-blur-md rounded-full flex items-center justify-center ${audioEnabled ? 'bg-black/30 text-white' : 'bg-red-500/80 text-white'}`}>
+                    {audioEnabled ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
                 </div>
             </div>
         </div>

@@ -14,6 +14,7 @@ interface VideoSectionProps {
     mainSpeaker: {
         stream?: MediaStream;
         displayName: string;
+        audioEnabled?: boolean;
     };
     participants: Participant[];
     recordingTime?: string;
@@ -33,6 +34,7 @@ export const VideoSection: React.FC<VideoSectionProps> = ({
             <MainVideo
                 stream={mainSpeaker.stream}
                 displayName={mainSpeaker.displayName}
+                audioEnabled={mainSpeaker.audioEnabled}
                 recordingTime={recordingTime}
                 isRecording={isRecording}
                 onFullscreen={onFullscreen}

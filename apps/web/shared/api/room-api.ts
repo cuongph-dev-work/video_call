@@ -2,6 +2,20 @@ import { MeetingConfig } from "@/domains/room/components/CreateMeetingModal";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
+export interface RoomPermissions {
+  allowChat: boolean;
+  allowScreenShare: boolean;
+  allowMicrophone: boolean;
+  allowCamera: boolean;
+}
+
+export interface RoomSettings {
+  requirePassword: boolean;
+  lockRoom: boolean;
+  roomName?: string;
+  permissions: RoomPermissions;
+}
+
 export const roomApi = {
   createRoom: async (config: MeetingConfig) => {
     const response = await fetch(`${API_URL}/rooms`, {
@@ -11,7 +25,7 @@ export const roomApi = {
       },
       body: JSON.stringify({
         name: config.name,
-        hostId: config.hostId, // Added hostId here
+        hostId: config.hostId,
         scheduledTime: config.scheduledTime,
         permissions: {
           allowJoinBeforeHost: config.allowJoinBeforeHost,
@@ -25,7 +39,28 @@ export const roomApi = {
       throw new Error('Failed to create room');
     }
 
-    return response.json(); // returns { success: true, roomId: '...', settings: ... }
+    return response.json();
+  },
+
+  getSettings: async (roomId: string): Promise<{ success: boolean; settings: RoomSettings }> => {
+    const response = await fetch(`${API_URL}/rooms/${roomId}/settings`);
+    if (!response.ok) {
+      // Return default permissions if settings not found
+      return {
+        success: true,
+        settings: {
+          requirePassword: false,
+          lockRoom: false,
+          permissions: {
+            allowChat: true,
+            allowScreenShare: true,
+            allowMicrophone: true,
+            allowCamera: true,
+          },
+        },
+      };
+    }
+    return response.json();
   },
 
   checkAccess: async (roomId: string) => {
@@ -44,9 +79,26 @@ export const roomApi = {
   checkRoomHost: async (roomId: string, userId: string) => {
     const response = await fetch(`${API_URL}/rooms/${roomId}/host`);
     if (!response.ok) {
-      return { isHost: false }; // If room doesn't exist or error, assume not host
+      return { isHost: false };
     }
     const data = await response.json() as { success: boolean; hostId: string };
     return { isHost: data.hostId === userId };
   },
+
+  validatePassword: async (roomId: string, password: string) => {
+    const response = await fetch(`${API_URL}/rooms/${roomId}/validate-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ password }),
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+    const data = await response.json();
+    return data.success;
+  },
 };
+

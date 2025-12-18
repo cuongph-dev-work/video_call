@@ -3,102 +3,53 @@ import { InjectRedis } from '@nestjs-modules/ioredis';
 import { Redis } from 'ioredis';
 import type { WaitingUser } from '@video-call/types';
 
+const WAITING_ROOM_TTL = 24 * 60 * 60; // 24 hours
+
 @Injectable()
 export class WaitingRoomService {
   constructor(@InjectRedis() private readonly redis: Redis) {}
 
-  private getWaitingKey(roomId: string): string {
-    return `room:${roomId}:waiting`;
-  }
+  private waitingKey = (roomId: string) => `room:${roomId}:waiting`;
+  private enabledKey = (roomId: string) => `room:${roomId}:waiting:enabled`;
 
-  private getEnabledKey(roomId: string): string {
-    return `room:${roomId}:waiting:enabled`;
-  }
-
-  /**
-   * Check if waiting room is enabled for a room
-   */
   async isEnabled(roomId: string): Promise<boolean> {
-    const enabled = await this.redis.get(this.getEnabledKey(roomId));
-    return enabled === '1';
+    return (await this.redis.get(this.enabledKey(roomId))) === '1';
   }
 
-  /**
-   * Enable/disable waiting room
-   */
   async setEnabled(roomId: string, enabled: boolean): Promise<void> {
     if (enabled) {
-      await this.redis.set(this.getEnabledKey(roomId), '1', 'EX', 24 * 60 * 60);
+      await this.redis.set(this.enabledKey(roomId), '1', 'EX', WAITING_ROOM_TTL);
     } else {
-      await this.redis.del(this.getEnabledKey(roomId));
+      await this.redis.del(this.enabledKey(roomId));
     }
   }
 
-  /**
-   * Add user to waiting queue
-   */
-  async addToWaitingQueue(
-    roomId: string,
-    userId: string,
-    displayName: string,
-  ): Promise<void> {
-    const user: WaitingUser = {
-      id: userId,
-      displayName,
-      joinedAt: new Date(),
-    };
-
-    await this.redis.hset(
-      this.getWaitingKey(roomId),
-      userId,
-      JSON.stringify(user),
-    );
-
-    // Set TTL for waiting queue
-    await this.redis.expire(this.getWaitingKey(roomId), 24 * 60 * 60);
+  async addToWaitingQueue(roomId: string, userId: string, displayName: string): Promise<void> {
+    const user: WaitingUser = { id: userId, displayName, joinedAt: new Date() };
+    await this.redis.hset(this.waitingKey(roomId), userId, JSON.stringify(user));
+    await this.redis.expire(this.waitingKey(roomId), WAITING_ROOM_TTL);
   }
 
-  /**
-   * Remove user from waiting queue
-   */
   async removeFromWaitingQueue(roomId: string, userId: string): Promise<void> {
-    await this.redis.hdel(this.getWaitingKey(roomId), userId);
+    await this.redis.hdel(this.waitingKey(roomId), userId);
   }
 
-  /**
-   * Get all waiting users for a room
-   */
   async getWaitingUsers(roomId: string): Promise<WaitingUser[]> {
-    const data = await this.redis.hgetall(this.getWaitingKey(roomId));
-
-    if (!data || Object.keys(data).length === 0) {
-      return [];
-    }
-
-    return Object.values(data).map(
-      (userJson) => JSON.parse(userJson) as WaitingUser,
-    );
+    const data = await this.redis.hgetall(this.waitingKey(roomId));
+    if (!data || Object.keys(data).length === 0) return [];
+    return Object.values(data).map((json) => JSON.parse(json) as WaitingUser);
   }
 
-  /**
-   * Get count of waiting users
-   */
   async getWaitingCount(roomId: string): Promise<number> {
-    return await this.redis.hlen(this.getWaitingKey(roomId));
+    return this.redis.hlen(this.waitingKey(roomId));
   }
 
-  /**
-   * Check if user is in waiting queue
-   */
   async isUserWaiting(roomId: string, userId: string): Promise<boolean> {
-    const exists = await this.redis.hexists(this.getWaitingKey(roomId), userId);
-    return exists === 1;
+    return (await this.redis.hexists(this.waitingKey(roomId), userId)) === 1;
   }
 
-  /**
-   * Clear all waiting users (when room ends)
-   */
   async clearWaitingQueue(roomId: string): Promise<void> {
-    await this.redis.del(this.getWaitingKey(roomId));
+    await this.redis.del(this.waitingKey(roomId));
   }
 }
+

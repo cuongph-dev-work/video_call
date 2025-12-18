@@ -16,6 +16,7 @@ import {
   MonitorUp,
   Keyboard,
 } from 'lucide-react';
+import { usePreferencesStore } from '@/shared/stores/usePreferencesStore';
 
 // Sub-Components
 interface NavItemProps {
@@ -64,19 +65,13 @@ const QuickAction = ({ icon, label, href = "#", onClick }: QuickActionProps) => 
 export default function HomePage() {
   const router = useRouter();
   const [roomCode, setRoomCode] = useState('');
-  // Start with default to avoid hydration mismatch
-  const [username, setUsername] = useState('Khách');
+  const { displayName } = usePreferencesStore();
+  // Start with default to avoid hydration mismatch, handling in useEffect/store handles hydration
   const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Load username from localStorage after mount to avoid hydration mismatch
-  // This pattern is necessary for Next.js SSR hydration safety
   useEffect(() => {
     setMounted(true);
-    const savedUsername = localStorage.getItem('username');
-    if (savedUsername) {
-      setUsername(savedUsername);
-    }
   }, []);
 
   // Update time every second
@@ -193,7 +188,7 @@ export default function HomePage() {
             className="h-10 w-10 rounded-full overflow-hidden border-2 border-[#232936] hover:border-[#3b82f6] transition-all flex items-center justify-center bg-gradient-to-br from-[#3b82f6] to-purple-500 text-white font-semibold text-sm"
             aria-label="User Profile"
           >
-            {mounted ? username.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase() : 'K'}
+            {mounted && displayName ? displayName.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase() : 'K'}
           </button>
         </div>
       </aside>
@@ -221,7 +216,7 @@ export default function HomePage() {
         <header className="w-full h-20 flex items-center justify-between px-8 z-10 hidden sm:flex shrink-0">
           <div>
             <h2 className="text-xl font-semibold text-white">Tổng quan</h2>
-            <p className="text-sm text-gray-400">Chào mừng trở lại, {mounted ? username : 'Khách'}</p>
+            <p className="text-sm text-gray-400">Chào mừng trở lại, {mounted && displayName ? displayName : 'Khách'}</p>
           </div>
           <div className="flex items-center gap-6">
             <div className="flex flex-col items-end">
@@ -312,7 +307,7 @@ export default function HomePage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onCreate={handleCreateMeeting}
-        username={username}
+        username={displayName || 'Khách'}
       />
     </div>
   );
