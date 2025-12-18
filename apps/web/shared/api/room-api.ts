@@ -40,4 +40,13 @@ export const roomApi = {
       waitingRoomEnabled: boolean;
     }>;
   },
+
+  checkRoomHost: async (roomId: string, userId: string) => {
+    const response = await fetch(`${API_URL}/rooms/${roomId}/host`);
+    if (!response.ok) {
+      return { isHost: false }; // If room doesn't exist or error, assume not host
+    }
+    const data = await response.json() as { success: boolean; hostId: string };
+    return { isHost: data.hostId === userId };
+  },
 };

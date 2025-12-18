@@ -1,17 +1,26 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "resolvePackageJsonExports": true,
-    "declaration": true,
-    "removeComments": true,
+    // NestJS requires CommonJS
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "ES2022",
+    // NestJS decorators
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
-    "allowSyntheticDefaultImports": true,
-    "target": "ES2022",
+    // Build output
+    "declaration": true,
+    "removeComments": true,
     "sourceMap": true,
     "outDir": "./dist",
+    // Override base - enable strict mode for better type safety
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "noFallthroughCasesInSwitch": true,
+    // NestJS compatibility
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    // Local paths only (workspace paths inherited from base)
     "baseUrl": "./",
     "paths": {
       "@/*": [
@@ -49,28 +58,18 @@
       ],
       "@prisma": [
         "prisma/generated"
-      ],
-      "@video-call/types": [
-        "../../packages/types/src"
-      ],
-      "@video-call/utils": [
-        "../../packages/utils/src"
       ]
-    },
-    "noImplicitAny": false,
-    "strictBindCallApply": false,
-    "noFallthroughCasesInSwitch": false
+    }
   },
   "include": [
     "src/**/*",
+    "test/**/*",
+    "generated/**/*",
     "prisma/generated"
   ],
   "exclude": [
     "node_modules",
-    "test",
-    "dist",
-    "**/*.spec.ts",
-    "**/*.test.ts"
+    "dist"
   ],
   "references": [
     {

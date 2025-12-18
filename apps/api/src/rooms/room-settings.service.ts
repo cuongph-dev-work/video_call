@@ -1,6 +1,6 @@
 import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import * as bcrypt from 'bcrypt';
 import type { DetailedRoomSettings } from '@video-call/types';
 import { UpdateSettingsDto } from './dto/update-settings.dto';

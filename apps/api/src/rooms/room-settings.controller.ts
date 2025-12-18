@@ -155,4 +155,32 @@ export class RoomSettingsController {
       );
     }
   }
+
+  /**
+   * GET /rooms/:roomId/host
+   * Check if room exists and get host ID
+   */
+  @Get(':roomId/host')
+  async getRoomHost(@Param('roomId') roomId: string) {
+    try {
+      const roomInfo = await this.settingsService['roomsService'].getRoomInfo(roomId);
+      
+      if (!roomInfo) {
+        throw new HttpException('Room not found', HttpStatus.NOT_FOUND);
+      }
+
+      return {
+        success: true,
+        hostId: roomInfo.hostId,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        'Failed to get room host',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 }

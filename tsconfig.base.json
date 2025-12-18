@@ -1,6 +1,18 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
+    // Module system
+    "module": "ESNext",
+    "target": "ES2022",
+    "lib": [
+      "ES2022"
+    ],
+    "moduleResolution": "bundler",
+    // Emit options - required for project references
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
     // Common module settings
     "esModuleInterop": true,
     "isolatedModules": true,
@@ -8,9 +20,13 @@
     "incremental": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    // Common strictness settings
+    // Strictness settings
+    "strict": true,
     "strictNullChecks": true,
-    // Common path resolution
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "noFallthroughCasesInSwitch": true,
+    // Path resolution
     "baseUrl": ".",
     "paths": {
       "@video-call/types": [
@@ -23,6 +39,7 @@
   },
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+    ".next"
   ]
 }

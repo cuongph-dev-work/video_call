@@ -23,7 +23,6 @@ import { RecordingIndicator } from '@/domains/media/components/RecordingIndicato
 import { KeyboardShortcutsHelp } from '@/shared/components/KeyboardShortcutsHelp';
 import { WaitingRoomScreen } from '@/domains/room/components/WaitingRoomScreen';
 import { roomApi } from '@/shared/api/room-api';
-import { useSearchParams } from 'next/navigation';
 import type { WaitingUser } from '../../../../../packages/types/src/waiting-room';
 
 // Lazy load RoomSettingsModal
@@ -56,6 +55,7 @@ export default function RoomPage() {
     const roomId = params.roomId as string;
     const [isJoined, setIsJoined] = useState(false);
     const [displayName, setDisplayName] = useState('');
+    const [isCheckingHost, setIsCheckingHost] = useState(true); // Loading state for host check
 
     const { getSocket, isConnected } = useSocket();
     const {
@@ -106,6 +106,32 @@ export default function RoomPage() {
     const hasJoinedRef = useRef(false);
 
     const userId = usePreferencesStore(state => state.userId);
+    const storedDisplayName = usePreferencesStore(state => state.displayName);
+
+    // Auto-join for room host (bypass pre-join screen)
+    useEffect(() => {
+        const checkAndAutoJoin = async () => {
+            if (!userId || !storedDisplayName) {
+                setIsCheckingHost(false);
+                return;
+            }
+
+            try {
+                const { isHost } = await roomApi.checkRoomHost(roomId, userId);
+                if (isHost) {
+                    setDisplayName(storedDisplayName);
+                    setIsJoined(true);
+                }
+            } catch (error) {
+                // Silently fail - user will go through normal pre-join flow
+                console.log('Could not check host status:', error);
+            } finally {
+                setIsCheckingHost(false);
+            }
+        };
+
+        checkAndAutoJoin();
+    }, [roomId, userId, storedDisplayName]);
 
     // Join room when socket connects (AND user has joined via UI)
     useEffect(() => {
@@ -113,14 +139,22 @@ export default function RoomPage() {
         if (socket && isConnected && roomId && !hasJoinedRef.current && isJoined && displayName) {
             hasJoinedRef.current = true;
 
+            // Use current values from state at time of join
+            const currentUserId = userId;
+            const currentDisplayName = displayName;
+
             socket.emit('join-room', {
                 roomId,
-                userId,
-                displayName,
+                userId: currentUserId,
+                displayName: currentDisplayName,
             });
 
             socket.on('room-joined', (data: { roomId: string; participants: Participant[] }) => {
                 setParticipants(data.participants || []);
+
+                // Request waiting users list immediately after joining
+                // This catches any users who joined waiting room before we setup listeners
+                socket.emit('get-waiting-users', { roomId });
             });
 
             socket.on('user-joined', (data: { participant: Participant }) => {
@@ -154,6 +188,7 @@ export default function RoomPage() {
 
             // Waiting room listeners
             socket.on('user-waiting', (data: { user: WaitingUser; waitingCount: number }) => {
+                console.log('🔔 Received user-waiting event:', data);
                 setWaitingUsers(prev => {
                     // Check if user already in list
                     if (prev.find(u => u.id === data.user.id)) return prev;
@@ -167,6 +202,7 @@ export default function RoomPage() {
             });
 
             socket.on('waiting-users-list', (data: { roomId: string; users: WaitingUser[] }) => {
+                console.log('📋 Received waiting-users-list:', data.users);
                 setWaitingUsers(data.users);
             });
         }
@@ -187,7 +223,8 @@ export default function RoomPage() {
             // DON'T reset hasJoinedRef here - it causes re-join on HMR
             // The ref persists across re-renders to prevent duplicate joins
         };
-    }, [getSocket, isConnected, roomId, displayName, isJoined]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [getSocket, isConnected, roomId, isJoined]); // Only essential deps, capture userId/displayName at join time
 
     // Listen for remote stream events
     useEffect(() => {
@@ -287,19 +324,10 @@ export default function RoomPage() {
 
     // Waiting room state
     const [isInWaitingRoom, setIsInWaitingRoom] = useState(false);
-    const searchParams = useSearchParams();
 
     // PRE-JOIN HANDLER
     const handleJoin = async (name: string) => {
         setDisplayName(name);
-
-        // Check if we created the room (bypasses waiting room)
-        const isCreator = searchParams.get('ref') === 'created';
-
-        if (isCreator) {
-            setIsJoined(true);
-            return;
-        }
 
         try {
             // Check room access
@@ -404,6 +432,18 @@ export default function RoomPage() {
         date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
         time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
     }), []);
+
+    // Show loading while checking if user is host
+    if (isCheckingHost) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-[#0b0e11]">
+                <div className="text-center">
+                    <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-gray-400 text-sm">Đang tải phòng họp...</p>
+                </div>
+            </div>
+        );
+    }
 
     if (isInWaitingRoom) {
         return <WaitingRoomScreen roomId={roomId} displayName={displayName} onLeave={() => router.push('/')} />;

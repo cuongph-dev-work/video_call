@@ -32,9 +32,24 @@ export function useLocalStream() {
 
   // Initialize stream when devices are selected
   useEffect(() => {
-    const getDevices = async () => {
+    let isMounted = true;
+
+    const initDevicesAndStream = async () => {
       try {
+        // First, request permissions to get actual device labels
+        // This is critical for incognito mode where localStorage is empty
+        const permissionStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: true,
+        });
+
+        // Now enumerate devices (will have actual labels after permission)
         const deviceList = await navigator.mediaDevices.enumerateDevices();
+        if (!isMounted) {
+          permissionStream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
         setDevices(deviceList);
 
         const audioInputs = deviceList.filter(d => d.kind === 'audioinput');
@@ -54,22 +69,16 @@ export function useLocalStream() {
         if (!storedMic && defaultMic) updateStoredMic(defaultMic);
         if (!storedCamera && defaultCamera) updateStoredCamera(defaultCamera);
         if (!storedSpeaker && defaultSpeaker) updateStoredSpeaker(defaultSpeaker);
-      } catch (err) {
-        console.error('Error getting devices:', err);
-      }
-    };
 
-    void getDevices();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run once on mount to get devices
+        // Stop permission stream - we'll create a new one with specific devices
+        permissionStream.getTracks().forEach(track => track.stop());
 
-  useEffect(() => {
-    if (!selectedMic || !selectedCamera) return;
+        // Now initialize the actual stream with selected devices
+        if (!defaultMic || !defaultCamera) {
+          setError('No camera or microphone found');
+          return;
+        }
 
-    let isMounted = true;
-
-    const initStream = async () => {
-      try {
         // Stop previous stream before creating new one
         if (streamRef.current) {
           streamRef.current.getTracks().forEach(track => track.stop());
@@ -81,20 +90,19 @@ export function useLocalStream() {
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true,
-            deviceId: { exact: selectedMic },
+            deviceId: { exact: defaultMic },
           },
           video: {
             width: { ideal: 1280 },
             height: { ideal: 720 },
             facingMode: 'user',
-            deviceId: { exact: selectedCamera },
+            deviceId: { exact: defaultCamera },
           },
         };
 
         const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
         
         if (!isMounted) {
-          // Component unmounted, stop tracks immediately
           mediaStream.getTracks().forEach(track => track.stop());
           return;
         }
@@ -111,17 +119,17 @@ export function useLocalStream() {
       }
     };
 
-    void initStream();
+    void initDevicesAndStream();
 
     return () => {
       isMounted = false;
-      // Clean up stream from ref
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
         streamRef.current = null;
       }
     };
-  }, [selectedMic, selectedCamera]); // FIXED: Added dependencies so stream initializes when devices are set
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount
 
   const toggleAudio = () => {
     if (stream) {

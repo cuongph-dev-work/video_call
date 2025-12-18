@@ -77,7 +77,7 @@ export const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
     }
 
     const handleCreate = async () => {
-        let finalScheduledTime: string | undefined;
+        let finalScheduledTime: Date | undefined;
 
         if (!isInstant && scheduledDate && scheduledTime) {
             // Combine Date and Time
@@ -86,12 +86,13 @@ export const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
             combined.setHours(hours);
             combined.setMinutes(minutes);
             combined.setSeconds(0);
-            finalScheduledTime = combined.toISOString();
+            finalScheduledTime = combined;
         }
 
         const config: MeetingConfig = {
             name: meetingName || `Cuộc họp của ${username}`,
             isInstant,
+            hostId: userId,
             scheduledTime: finalScheduledTime,
             allowJoinBeforeHost,
             allowCamera,

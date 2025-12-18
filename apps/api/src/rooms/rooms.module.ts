@@ -5,7 +5,6 @@ import { RoomSettingsService } from './room-settings.service';
 import { RoomSettingsController } from './room-settings.controller';
 import { WaitingRoomService } from './waiting-room.service';
 
-
 @Module({
   imports: [RedisModule],
   controllers: [RoomSettingsController],

@@ -18,6 +18,24 @@ export function generateMeetingCode(): string {
     .join('-');
 }
 
+/**
+ * Validates and formats a room code to XXX-XXXX-XXX format
+ * Accepts alphanumeric input (A-Z, 0-9) and formats it correctly
+ * Returns null if invalid
+ */
+export function validateAndFormatRoomCode(code: string): string | null {
+  // Remove spaces and hyphens, convert to uppercase
+  const cleaned = code.replace(/[\s-]/g, '').toUpperCase();
+
+  // Check if it's 10 alphanumeric characters
+  if (!/^[A-Z0-9]{10}$/.test(cleaned)) {
+    return null;
+  }
+
+  // Format: XXX-XXXX-XXX
+  return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 7)}-${cleaned.slice(7, 10)}`;
+}
+
 export function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);

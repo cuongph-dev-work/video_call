@@ -272,6 +272,9 @@ export class SignalingGateway
     try {
       const { roomId, displayName } = data;
 
+      // Join socket room first so waiting user can receive admitted/rejected events
+      void client.join(roomId);
+
       // Add to waiting queue
       await this.waitingRoomService.addToWaitingQueue(
         roomId,
@@ -285,15 +288,19 @@ export class SignalingGateway
         message: 'Waiting for host to admit you',
       });
 
-      // Notify host/room about new waiting user
+      // Notify host/participants in room about new waiting user
+      const waitingUser = {
+        id: client.id,
+        displayName,
+        joinedAt: new Date(),
+      };
+
       const waitingCount =
         await this.waitingRoomService.getWaitingCount(roomId);
+
+      // Emit to all in room (including the waiting user who just joined)
       this.server.to(roomId).emit('user-waiting', {
-        user: {
-          id: client.id,
-          displayName,
-          joinedAt: new Date(),
-        },
+        user: waitingUser,
         waitingCount,
       });
 

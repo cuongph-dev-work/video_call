@@ -8,6 +8,12 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "jsx": "preserve",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [],
     "plugins": [
       {
         "name": "next"
@@ -17,12 +23,6 @@
     "paths": {
       "@/*": [
         "./*"
-      ],
-      "@video-call/types": [
-        "../../packages/types/src"
-      ],
-      "@video-call/utils": [
-        "../../packages/utils/src"
       ]
     }
   },

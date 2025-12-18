@@ -1,6 +1,6 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import { RoomSettingsService } from './room-settings.service';
 import { WaitingRoomService } from './waiting-room.service';
 import { prisma } from '../lib/prisma';
@@ -88,7 +88,7 @@ export class RoomsService {
 
     // Check if room exists
     const roomExists = await this.redis.exists(roomKey);
-    
+
     if (roomExists) {
       // Check if room should be cleaned up (created > 1h ago and no participants)
       const shouldCleanup = await this.shouldCleanupRoom(roomId);
@@ -335,7 +335,9 @@ export class RoomsService {
     try {
       await this.roomSettingsService.deleteSettings(roomId);
     } catch (error) {
-      this.logger.warn(`Failed to cleanup settings for room ${roomId}: ${error}`);
+      this.logger.warn(
+        `Failed to cleanup settings for room ${roomId}: ${error}`,
+      );
     }
 
     // Cleanup waiting room
@@ -343,7 +345,9 @@ export class RoomsService {
       await this.waitingRoomService.clearWaitingQueue(roomId);
       await this.waitingRoomService.setEnabled(roomId, false);
     } catch (error) {
-      this.logger.warn(`Failed to cleanup waiting room for ${roomId}: ${error}`);
+      this.logger.warn(
+        `Failed to cleanup waiting room for ${roomId}: ${error}`,
+      );
     }
 
     // Save history to DB if room was created
@@ -361,13 +365,9 @@ export class RoomsService {
         });
       } catch (error) {
         if (error instanceof Error) {
-          this.logger.error(
-            `Failed to save meeting history: ${error.message}`,
-          );
+          this.logger.error(`Failed to save meeting history: ${error.message}`);
         } else {
-          this.logger.error(
-            `Failed to save meeting history: ${String(error)}`,
-          );
+          this.logger.error(`Failed to save meeting history: ${String(error)}`);
         }
       }
     }

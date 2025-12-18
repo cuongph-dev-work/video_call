@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { generateMeetingCode } from '@video-call/utils';
+import { generateMeetingCode, validateAndFormatRoomCode } from '@video-call/utils';
 import { toast } from 'sonner';
 import { CreateMeetingModal, MeetingConfig } from '@/domains/room/components/CreateMeetingModal';
 import {
@@ -102,19 +102,7 @@ export default function HomePage() {
     month: 'short'
   });
 
-  // Validate and format room code: XX-XXXX-XX
-  const validateAndFormatRoomCode = useCallback((code: string): string | null => {
-    // Remove spaces and hyphens, convert to uppercase
-    const cleaned = code.replace(/[\s-]/g, '').toUpperCase();
 
-    // Check if it's 8 letters
-    if (!/^[A-Z]{8}$/.test(cleaned)) {
-      return null;
-    }
-
-    // Format: XX-XXXX-XX
-    return `${cleaned.slice(0, 2)}-${cleaned.slice(2, 6)}-${cleaned.slice(6, 8)}`;
-  }, []);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -130,10 +118,8 @@ export default function HomePage() {
     setIsModalOpen(false);
 
     if (config.isInstant) {
-      // Instant meeting: Redirect to pre-join immediately
-      // In a real app, we would send 'config' to backend here to persist settings
-      // For now, we just navigate
-      router.push(`/room/${config.roomId}/pre-join?ref=created`);
+      // Instant meeting: Redirect to room immediately
+      router.push(`/room/${config.roomId}`);
     } else {
       // Scheduled meeting: Just show alert for now as per US accept criteria "show screen with link" (simplified)
       // We'll use a simple alert for Phase 4 MVP to avoid building a full "Success" screen/modal right now unless requested
@@ -155,11 +141,11 @@ export default function HomePage() {
   const handleJoinMeeting = useCallback(() => {
     const formatted = validateAndFormatRoomCode(roomCode);
     if (formatted) {
-      // Navigate to pre-join page
-      router.push(`/room/${formatted}/pre-join`);
+      // Navigate to room page
+      router.push(`/room/${formatted}`);
     } else {
       // Show error
-      toast.error('Mã phòng không hợp lệ. Vui lòng nhập 8 chữ cái (VD: AB-CDEF-GH)');
+      toast.error('Mã phòng không hợp lệ. Vui lòng nhập 10 ký tự (VD: ABC-DEFG-HIJ)');
     }
   }, [roomCode, router, validateAndFormatRoomCode]);
 
@@ -172,17 +158,17 @@ export default function HomePage() {
   // Auto-format room code while typing
   const handleRoomCodeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.toUpperCase();
-    // Remove non-letters
-    value = value.replace(/[^A-Z]/g, '');
-    // Auto-add hyphens
-    if (value.length > 2 && value[2] !== '-') {
-      value = value.slice(0, 2) + '-' + value.slice(2);
+    // Remove non-alphanumeric characters
+    value = value.replace(/[^A-Z0-9]/g, '');
+    // Auto-add hyphens: XXX-XXXX-XXX
+    if (value.length > 3 && value[3] !== '-') {
+      value = value.slice(0, 3) + '-' + value.slice(3);
     }
-    if (value.length > 7 && value[7] !== '-') {
-      value = value.slice(0, 7) + '-' + value.slice(7);
+    if (value.length > 8 && value[8] !== '-') {
+      value = value.slice(0, 8) + '-' + value.slice(8);
     }
-    // Max length: XX-XXXX-XX (10 chars with hyphens)
-    value = value.slice(0, 10);
+    // Max length: XXX-XXXX-XXX (12 chars with hyphens)
+    value = value.slice(0, 12);
     setRoomCode(value);
   }, []);
 
@@ -284,12 +270,12 @@ export default function HomePage() {
                     </div>
                     <input
                       className="block w-full h-14 pl-10 pr-24 bg-[#161b22] border border-[#232936] rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-[#3b82f6] focus:border-transparent transition-all focus:outline-none uppercase"
-                      placeholder="e.g., AB-CDEF-GH"
+                      placeholder="e.g., ABC-DEFG-HIJ"
                       type="text"
                       value={roomCode}
                       onChange={handleRoomCodeChange}
                       onKeyDown={handleKeyDown}
-                      maxLength={10}
+                      maxLength={12}
                     />
                     <button
                       className="absolute right-2 top-2 bottom-2 px-4 bg-[#1f2937] hover:bg-gray-600 text-gray-300 hover:text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
