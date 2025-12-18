@@ -1,34 +1,65 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2023",
-    "lib": [
-      "ES2023"
-    ],
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "strict": true,
-    "esModuleInterop": true,
-    "outDir": "./dist",
-    "baseUrl": "./",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "resolvePackageJsonExports": true,
+    "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
-    "composite": false,
-    "types": [
-      "node"
-    ],
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2022",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
     "paths": {
+      "@/*": [
+        "src/*"
+      ],
+      "@/constants/*": [
+        "src/constants/*"
+      ],
+      "@/entities/*": [
+        "src/database/entities/*"
+      ],
+      "@/modules/*": [
+        "src/modules/*"
+      ],
+      "@/shared/*": [
+        "src/shared/*"
+      ],
+      "@/utils/*": [
+        "src/utils/*"
+      ],
+      "@/interfaces/*": [
+        "src/interfaces/*"
+      ],
+      "@/exceptions/*": [
+        "src/exceptions/*"
+      ],
+      "@/guards/*": [
+        "src/guards/*"
+      ],
+      "@/decorators/*": [
+        "src/decorators/*"
+      ],
+      "@/interceptors/*": [
+        "src/interceptors/*"
+      ],
+      "@prisma": [
+        "prisma/generated"
+      ],
       "@video-call/types": [
         "../../packages/types/src"
       ],
       "@video-call/utils": [
         "../../packages/utils/src"
-      ],
-      "@prisma": [
-        "prisma/generated"
       ]
-    }
+    },
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "noFallthroughCasesInSwitch": false
   },
   "include": [
     "src/**/*",

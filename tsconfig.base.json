@@ -1,28 +1,28 @@
 {
+  "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
-    "target": "ES2021",
-    "lib": ["ES2021"],
-    "module": "commonjs",
-    "moduleResolution": "node",
+    // Common module settings
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "strictNullChecks": true,
-    "noImplicitAny": true,
-    "strictBindCallApply": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "composite": true,
+    "isolatedModules": true,
+    // Common build settings
     "incremental": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    // Common strictness settings
+    "strictNullChecks": true,
+    // Common path resolution
     "baseUrl": ".",
     "paths": {
-      "@video-call/types": ["./packages/types/src"],
-      "@video-call/utils": ["./packages/utils/src"]
+      "@video-call/types": [
+        "./packages/types/src"
+      ],
+      "@video-call/utils": [
+        "./packages/utils/src"
+      ]
     }
   },
-  "exclude": ["node_modules", "dist", "build", ".turbo", "**/*.spec.ts", "**/*.test.ts"]
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }
