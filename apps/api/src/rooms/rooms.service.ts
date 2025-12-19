@@ -163,29 +163,81 @@ export class RoomsService {
     await this.redis.expire(this.participantKey(userId, roomId), TTL.PARTICIPANT);
     await this.redis.hset(this.roomKey(roomId), 'lastActivity', Date.now().toString());
 
+    // Save user history (async)
+    this.saveUserHistory(roomId, userId).catch(err => 
+      this.logger.error(`Failed to save user history: ${err.message}`)
+    );
+
     this.logger.log(`User ${displayName} joined room ${roomId}`);
 
     return this.getParticipants(roomId);
   }
 
+  private async saveUserHistory(roomId: string, userId: string): Promise<void> {
+    try {
+      // Upsert to handle re-joins (only one record per user-room pair)
+      await prisma.userRoomHistory.upsert({
+        where: {
+          userId_roomId: {
+            userId,
+            roomId,
+          },
+        },
+        update: {
+          joinedAt: new Date(), // Update join time on re-join
+        },
+        create: {
+          userId,
+          roomId,
+          joinedAt: new Date(),
+        },
+      });
+    } catch (error) {
+      // Ignore if foreign key failure (room creates happen async/upsert)
+      if (error instanceof Error && !error.message.includes('Foreign key constraint failed')) {
+         this.logger.warn(`Failed to save user history: ${error.message}`);
+      }
+    }
+  }
+
+
   async leaveRoom(roomId: string, userId: string): Promise<void> {
+    // Remove participant
     await Promise.all([
       this.redis.srem(this.participantsKey(roomId), userId),
       this.redis.srem(this.userRoomsKey(userId), roomId),
       this.redis.del(this.participantKey(userId, roomId)),
     ]);
 
+    // Update lastActivity timestamp
+    await this.redis.hset(this.roomKey(roomId), {
+      lastActivity: Date.now().toString(),
+    });
+
+    // Check if room is now empty
     const count = await this.redis.scard(this.participantsKey(roomId));
     if (count === 0) {
-      const roomInfo = await this.redis.hgetall(this.roomKey(roomId));
+      // DON'T delete room immediately - preserve for host to rejoin
+      // Only cleanup if room has been empty for > 1 hour
+      if (await this.shouldCleanupRoom(roomId)) {
+        const roomInfo = await this.redis.hgetall(this.roomKey(roomId));
+        
+        await Promise.all([
+          this.redis.del(this.roomKey(roomId)),
+          this.redis.del(this.participantsKey(roomId)),
+        ]);
 
-      await Promise.all([
-        this.redis.del(this.roomKey(roomId)),
-        this.redis.del(this.participantsKey(roomId)),
-      ]);
+        // Clean up settings and waiting room
+        await Promise.all([
+          this.roomSettingsService.deleteSettings(roomId).catch(() => {}),
+          this.waitingRoomService.clearWaitingQueue(roomId).catch(() => {}),
+          this.waitingRoomService.setEnabled(roomId, false).catch(() => {}),
+        ]);
 
-      await this.saveMeetingHistory(roomId, roomInfo);
-      this.logger.log(`Room ${roomId} deleted (empty)`);
+        this.logger.log(`Room ${roomId} cleaned up (empty for > 1 hour)`);
+      } else {
+        this.logger.log(`Room ${roomId} is empty but preserved for host to rejoin`);
+      }
     }
 
     this.logger.log(`User ${userId} left room ${roomId}`);
@@ -241,22 +293,22 @@ export class RoomsService {
   }
 
   // -------------------------------------------------------------------------
-  // Cleanup
+  // Cleanup Helper
   // -------------------------------------------------------------------------
+
 
   private async shouldCleanupRoom(roomId: string): Promise<boolean> {
     const participantCount = await this.redis.scard(this.participantsKey(roomId));
     if (participantCount > 0) return false;
 
     const roomData = await this.redis.hgetall(this.roomKey(roomId));
-    if (!roomData?.createdAt) return false;
+    if (!roomData?.lastActivity) return false;
 
-    return Date.now() - parseInt(roomData.createdAt, 10) > ONE_HOUR_MS;
+    // Cleanup if room has been empty for more than 1 hour
+    return Date.now() - parseInt(roomData.lastActivity, 10) > ONE_HOUR_MS;
   }
 
   private async cleanupRoom(roomId: string): Promise<void> {
-    const roomInfo = await this.redis.hgetall(this.roomKey(roomId));
-
     await Promise.all([
       this.redis.del(this.roomKey(roomId)),
       this.redis.del(this.participantsKey(roomId)),
@@ -269,24 +321,6 @@ export class RoomsService {
       this.waitingRoomService.setEnabled(roomId, false).catch(() => {}),
     ]);
 
-    await this.saveMeetingHistory(roomId, roomInfo);
     this.logger.log(`Room ${roomId} cleaned up`);
   }
-
-  private async saveMeetingHistory(roomId: string, roomInfo: Record<string, string>): Promise<void> {
-    if (!roomInfo?.createdAt) return;
-
-    try {
-      await prisma.meetingHistory.create({
-        data: {
-          roomId,
-          startedAt: new Date(parseInt(roomInfo.createdAt, 10)),
-          endedAt: new Date(),
-        },
-      });
-    } catch (error) {
-      this.logger.error(`Failed to save meeting history: ${error instanceof Error ? error.message : error}`);
-    }
-  }
 }
-

@@ -16,6 +16,16 @@ export interface RoomSettings {
   permissions: RoomPermissions;
 }
 
+export interface RoomInfo {
+  success: boolean;
+  roomId: string;
+  hostId: string;
+  isHost: boolean;
+  participantCount: number;
+  lastActivity: number;
+  settings: RoomSettings;
+}
+
 export const roomApi = {
   createRoom: async (config: MeetingConfig) => {
     const response = await fetch(`${API_URL}/rooms`, {
@@ -42,6 +52,30 @@ export const roomApi = {
     return response.json();
   },
 
+  /**
+   * Get unified room information including settings, host status, participant count
+   * Returns 404 only if room doesn't exist or has expired
+   */
+  getRoomInfo: async (roomId: string, userId?: string): Promise<RoomInfo> => {
+    const url = userId 
+      ? `${API_URL}/rooms/${roomId}/info?userId=${userId}`
+      : `${API_URL}/rooms/${roomId}/info`;
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error('Room not found or expired');
+      }
+      throw new Error('Failed to get room info');
+    }
+    
+    return response.json();
+  },
+
+  /**
+   * @deprecated Use getRoomInfo instead
+   */
   getSettings: async (roomId: string): Promise<{ success: boolean; settings: RoomSettings }> => {
     const response = await fetch(`${API_URL}/rooms/${roomId}/settings`);
     if (!response.ok) {
@@ -76,6 +110,9 @@ export const roomApi = {
     }>;
   },
 
+  /**
+   * @deprecated Use getRoomInfo(roomId, userId) instead
+   */
   checkRoomHost: async (roomId: string, userId: string) => {
     const response = await fetch(`${API_URL}/rooms/${roomId}/host`);
     if (!response.ok) {

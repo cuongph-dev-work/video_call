@@ -12,6 +12,10 @@ interface PreferencesState {
   selectedSpeaker: string;
   audioEnabled: boolean;
   videoEnabled: boolean;
+  
+  // Media settings
+  videoQuality: 'auto' | '360p' | '720p' | '1080p';
+  mirrorVideo: boolean;
 }
 
 interface PreferencesActions {
@@ -21,6 +25,11 @@ interface PreferencesActions {
   setSelectedSpeaker: (deviceId: string) => void;
   setAudioEnabled: (enabled: boolean) => void;
   setVideoEnabled: (enabled: boolean) => void;
+  
+  // Media settings actions
+  setVideoQuality: (quality: 'auto' | '360p' | '720p' | '1080p') => void;
+  setMirrorVideo: (enabled: boolean) => void;
+  
   reset: () => void;
 }
 
@@ -34,6 +43,10 @@ const initialState: PreferencesState = {
   selectedSpeaker: '',
   audioEnabled: true,
   videoEnabled: true,
+  
+  // Media settings defaults
+  videoQuality: 'auto',
+  mirrorVideo: true,
 };
 
 export const usePreferencesStore = create<PreferencesStore>()(
@@ -49,6 +62,10 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setSelectedSpeaker: (deviceId) => set({ selectedSpeaker: deviceId }),
       setAudioEnabled: (enabled) => set({ audioEnabled: enabled }),
       setVideoEnabled: (enabled) => set({ videoEnabled: enabled }),
+      
+      // Media settings actions
+      setVideoQuality: (quality) => set({ videoQuality: quality }),
+      setMirrorVideo: (enabled) => set({ mirrorVideo: enabled }),
       
       reset: () => set(initialState),
     }),

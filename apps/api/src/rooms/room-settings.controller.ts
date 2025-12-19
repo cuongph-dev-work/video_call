@@ -1,15 +1,14 @@
 import {
   Controller,
   Get,
-  Put,
   Post,
   Param,
   Body,
+  Query,
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
 import { RoomSettingsService } from './room-settings.service';
-import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { ValidatePasswordDto } from './dto/validate-password.dto';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { generateMeetingCode } from '@video-call/utils';
@@ -29,6 +28,49 @@ export class RoomSettingsController {
     }
   }
 
+  /**
+   * Unified endpoint for room information
+   * Returns: settings, isHost, participantCount, lastActivity
+   * Only returns 404 if room doesn't exist or has expired
+   */
+  @Get(':roomId/info')
+  async getRoomInfo(
+    @Param('roomId') roomId: string,
+    @Query('userId') userId?: string,
+  ) {
+    try {
+      // Get room info from Redis
+      const roomInfo = await this.settingsService['roomsService'].getRoomInfo(roomId);
+      
+      // Only return 404 if room doesn't exist (not created or expired)
+      if (!roomInfo) {
+        throw new HttpException('Room not found', HttpStatus.NOT_FOUND);
+      }
+
+      // Get public settings (without password)
+      const settings = await this.settingsService.getPublicSettings(roomId);
+
+      // Determine if user is host
+      const isHost = userId ? roomInfo.hostId === userId : false;
+
+      return {
+        success: true,
+        roomId,
+        hostId: roomInfo.hostId,
+        isHost,
+        participantCount: roomInfo.participantCount,
+        lastActivity: roomInfo.lastActivity,
+        settings,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new HttpException('Failed to get room info', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * @deprecated Use getRoomInfo instead - kept for backward compatibility
+   */
   @Get(':roomId/settings')
   async getSettings(@Param('roomId') roomId: string) {
     try {
@@ -36,17 +78,6 @@ export class RoomSettingsController {
       return { success: true, settings };
     } catch {
       throw new HttpException('Failed to fetch room settings', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
-
-  @Put(':roomId/settings')
-  async updateSettings(@Param('roomId') roomId: string, @Body() updateDto: UpdateSettingsDto) {
-    try {
-      const settings = await this.settingsService.updateSettings(roomId, updateDto);
-      const { password: _, ...publicSettings } = settings;
-      return { success: true, settings: publicSettings, message: 'Room settings updated successfully' };
-    } catch {
-      throw new HttpException('Failed to update room settings', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -77,19 +108,4 @@ export class RoomSettingsController {
       throw new HttpException('Failed to check room access', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
-
-  @Get(':roomId/host')
-  async getRoomHost(@Param('roomId') roomId: string) {
-    try {
-      const roomInfo = await this.settingsService['roomsService'].getRoomInfo(roomId);
-      if (!roomInfo) {
-        throw new HttpException('Room not found', HttpStatus.NOT_FOUND);
-      }
-      return { success: true, hostId: roomInfo.hostId };
-    } catch (error) {
-      if (error instanceof HttpException) throw error;
-      throw new HttpException('Failed to get room host', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
 }
-

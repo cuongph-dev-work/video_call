@@ -24,6 +24,7 @@ export function useRoomAccess(roomId: string) {
     const [isInWaitingRoom, setIsInWaitingRoom] = useState(false);
     const [isHost, setIsHost] = useState(false);
     const [permissions, setPermissions] = useState<RoomPermissions>(DEFAULT_PERMISSIONS);
+    const [showRoomNotFound, setShowRoomNotFound] = useState(false);
     
     // Password Modal State
     const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -57,24 +58,26 @@ export function useRoomAccess(roomId: string) {
             checkingRef.current = true;
 
             try {
-                // Fetch both host status and settings in parallel
-                const [hostResult, settingsResult] = await Promise.all([
-                    roomApi.checkRoomHost(roomId, userId),
-                    roomApi.getSettings(roomId),
-                ]);
+                // Fetch room info (includes host status, settings, participant count)
+                const roomInfo = await roomApi.getRoomInfo(roomId, userId);
 
-                setIsHost(hostResult.isHost);
+                setIsHost(roomInfo.isHost);
                 
-                if (settingsResult.settings?.permissions) {
-                    setPermissions(settingsResult.settings.permissions);
+                if (roomInfo.settings?.permissions) {
+                    setPermissions(roomInfo.settings.permissions);
                 }
 
-                if (hostResult.isHost) {
+                if (roomInfo.isHost) {
                     setDisplayName(storedDisplayName || '');
                     setIsJoined(true);
                 }
             } catch (error) {
-                console.log('Could not check host status:', error);
+                // Check if it's a 404 error (room not found)
+                if (error instanceof Error && error.message.includes('not found')) {
+                    setShowRoomNotFound(true);
+                } else {
+                    console.log('Could not check host status:', error);
+                }
             } finally {
                 setIsCheckingHost(false);
                 hasCheckedHostRef.current = true;
@@ -183,6 +186,7 @@ export function useRoomAccess(roomId: string) {
         isInWaitingRoom,
         isHost,
         permissions,
+        showRoomNotFound,
         showPasswordModal,
         passwordError,
         isValidatingPassword,
@@ -191,4 +195,5 @@ export function useRoomAccess(roomId: string) {
         handlePasswordSubmit,
     };
 }
+
 

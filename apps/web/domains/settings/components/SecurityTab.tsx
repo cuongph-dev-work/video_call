@@ -1,16 +1,35 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Lock, Key, Copy, RefreshCw, MessageSquare, Monitor, Mic, Video } from 'lucide-react';
+import type { RoomSettingsState, RoomPermissions } from '@video-call/types';
 
 interface SecurityTabProps {
     roomId: string;
+    settings: RoomSettingsState;
+    permissions: RoomPermissions;
+    isHost: boolean;
+    isLoading: boolean;
+    updateSettings: (updates: Partial<RoomSettingsState>) => void;
+    updatePermission: (key: keyof RoomPermissions, value: boolean) => void;
 }
 
-export const SecurityTab: React.FC<SecurityTabProps> = ({ roomId }) => {
-    const [requirePassword, setRequirePassword] = useState(true);
+export const SecurityTab: React.FC<SecurityTabProps> = ({
+    roomId,
+    settings,
+    permissions,
+    isHost,
+    isLoading,
+    updateSettings,
+    updatePermission,
+}) => {
     const [password, setPassword] = useState('meet-secure-8829');
     const [copied, setCopied] = useState(false);
+
+    const handleTogglePassword = (checked: boolean) => {
+        updateSettings({ requirePassword: checked });
+    };
+
 
     const handleCopyPassword = () => {
         navigator.clipboard.writeText(password);
@@ -43,8 +62,9 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ roomId }) => {
                     <label className="relative inline-flex items-center cursor-pointer">
                         <input
                             type="checkbox"
-                            checked={requirePassword}
-                            onChange={(e) => setRequirePassword(e.target.checked)}
+                            checked={settings.requirePassword ?? false}
+                            onChange={(e) => handleTogglePassword(e.target.checked)}
+                            disabled={!isHost}
                             className="sr-only peer"
                         />
                         <div className="w-11 h-6 bg-[#2a3042] peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
@@ -52,7 +72,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ roomId }) => {
                 </div>
 
                 {/* Password Input */}
-                {requirePassword && (
+                {settings.requirePassword && (
                     <div className="mt-4 pl-[52px]">
                         <div className="flex items-center gap-2 p-1.5 pr-2 bg-[#0f111a]/50 border border-[#2e3445] rounded-lg w-full max-w-sm group focus-within:ring-2 focus-within:ring-blue-500/50 transition-all">
                             <Key className="w-4 h-4 text-gray-500 ml-2" />
@@ -98,22 +118,29 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ roomId }) => {
                 </button>
             </div>
 
-            <PermissionsList />
+            <PermissionsList
+                permissions={permissions}
+                isHost={isHost}
+                updatePermission={updatePermission}
+            />
         </div>
     );
 };
 
 // Permissions List Component
-const PermissionsList: React.FC = () => {
-    const [permissions, setPermissions] = useState({
-        chat: true,
-        screenShare: false,
-        microphone: true,
-        camera: true,
-    });
+interface PermissionsListProps {
+    permissions: RoomPermissions;
+    isHost: boolean;
+    updatePermission: (key: keyof RoomPermissions, value: boolean) => void;
+}
 
-    const togglePermission = (key: keyof typeof permissions) => {
-        setPermissions((prev) => ({ ...prev, [key]: !prev[key] }));
+const PermissionsList: React.FC<PermissionsListProps> = ({
+    permissions,
+    isHost,
+    updatePermission,
+}) => {
+    const togglePermission = (key: keyof RoomPermissions) => {
+        updatePermission(key, !permissions[key]);
     };
 
     return (
@@ -121,26 +148,30 @@ const PermissionsList: React.FC = () => {
             <PermissionItem
                 icon={<MessageSquare className="w-4 h-4" />}
                 label="Gửi tin nhắn chat"
-                checked={permissions.chat}
-                onChange={() => togglePermission('chat')}
+                checked={permissions.allowChat ?? true}
+                onChange={() => togglePermission('allowChat')}
+                disabled={!isHost}
             />
             <PermissionItem
                 icon={<Monitor className="w-4 h-4" />}
                 label="Chia sẻ màn hình"
-                checked={permissions.screenShare}
-                onChange={() => togglePermission('screenShare')}
+                checked={permissions.allowScreenShare ?? true}
+                onChange={() => togglePermission('allowScreenShare')}
+                disabled={!isHost}
             />
             <PermissionItem
                 icon={<Mic className="w-4 h-4" />}
                 label="Bật microphone"
-                checked={permissions.microphone}
-                onChange={() => togglePermission('microphone')}
+                checked={permissions.allowMicrophone ?? true}
+                onChange={() => togglePermission('allowMicrophone')}
+                disabled={!isHost}
             />
             <PermissionItem
                 icon={<Video className="w-4 h-4" />}
                 label="Bật camera"
-                checked={permissions.camera}
-                onChange={() => togglePermission('camera')}
+                checked={permissions.allowCamera ?? true}
+                onChange={() => togglePermission('allowCamera')}
+                disabled={!isHost}
             />
         </div>
     );
@@ -152,9 +183,10 @@ interface PermissionItemProps {
     label: string;
     checked: boolean;
     onChange: () => void;
+    disabled?: boolean;
 }
 
-const PermissionItem: React.FC<PermissionItemProps> = ({ icon, label, checked, onChange }) => (
+const PermissionItem: React.FC<PermissionItemProps> = ({ icon, label, checked, onChange, disabled = false }) => (
     <div className="flex items-center justify-between p-3 rounded-lg hover:bg-[#2a3042]/30 transition-colors group">
         <div className="flex items-center gap-3">
             <div className="text-gray-400 group-hover:text-blue-400 transition-colors">
@@ -163,8 +195,14 @@ const PermissionItem: React.FC<PermissionItemProps> = ({ icon, label, checked, o
             <span className="text-sm font-medium text-white">{label}</span>
         </div>
         <label className="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" checked={checked} onChange={onChange} className="sr-only peer" />
-            <div className="w-9 h-5 bg-[#2a3042] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+            <input
+                type="checkbox"
+                checked={checked}
+                onChange={onChange}
+                disabled={disabled}
+                className="sr-only peer"
+            />
+            <div className="w-9 h-5 bg-[#2a3042] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
         </label>
     </div>
 );

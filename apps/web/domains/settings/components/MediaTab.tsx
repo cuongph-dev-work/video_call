@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Video, Mic, Volume2, Sparkles, Sliders, VideoOff } from 'lucide-react';
+import { Video, Mic, Volume2, VideoOff, Sliders } from 'lucide-react';
 import { DeviceSelect } from '@/domains/room/components/DeviceSelect';
+import { usePreferencesStore } from '@/shared/stores/usePreferencesStore';
 
-import { BackgroundSelector } from '@/domains/media/components/BackgroundSelector';
-import { BackgroundType } from '@/domains/media/lib/background-processor';
-import { useVirtualBackground } from '@/domains/media/hooks/useVirtualBackground';
+// Background effects temporarily disabled
+// import { BackgroundSelector } from '@/domains/media/components/BackgroundSelector';
+// import { BackgroundType } from '@/domains/media/lib/background-processor';
+// import { useVirtualBackground } from '@/domains/media/hooks/useVirtualBackground';
 
 export const MediaTab: React.FC = () => {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -14,6 +16,20 @@ export const MediaTab: React.FC = () => {
     const analyserRef = useRef<AnalyserNode | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const animationFrameRef = useRef<number | undefined>(undefined);
+
+    // Use preferences store for persistent settings
+    const {
+        selectedMic,
+        selectedCamera,
+        selectedSpeaker,
+        videoQuality,
+        mirrorVideo,
+        setSelectedMic,
+        setSelectedCamera,
+        setSelectedSpeaker,
+        setVideoQuality,
+        setMirrorVideo,
+    } = usePreferencesStore();
 
     const [devices, setDevices] = useState<{
         audioInputs: MediaDeviceInfo[];
@@ -25,44 +41,26 @@ export const MediaTab: React.FC = () => {
         audioOutputs: [],
     });
 
-    const [selectedDevices, setSelectedDevices] = useState({
-        microphone: '',
-        camera: '',
-        speaker: '',
-    });
-
-    const [settings, setSettings] = useState({
-        videoQuality: 'auto',
-        noiseCancellation: true,
-        echoCancellation: true,
-        autoGainControl: true,
-        backgroundType: 'none' as BackgroundType,
-        mirrorVideo: true,
-    });
-
-    const [showBackgroundSelector, setShowBackgroundSelector] = useState(false);
-
     const [audioLevel, setAudioLevel] = useState(0);
     const [isVideoEnabled, setIsVideoEnabled] = useState(true);
 
-    // Virtual background processing - use null initially to avoid accessing ref during render
-    const [videoElement, setVideoElement] = React.useState<HTMLVideoElement | null>(null);
+    // Virtual background processing - temporarily disabled
+    // const [videoElement, setVideoElement] = React.useState<HTMLVideoElement | null>(null);
+    // const {
+    //     isReady: isBackgroundReady,
+    //     isProcessing: isBackgroundProcessing,
+    //     error: backgroundError,
+    //     setBackgroundType: applyBackground,
+    //     isSupported: isBackgroundSupported,
+    // } = useVirtualBackground({
+    //     videoElement,
+    //     enabled: settings.backgroundType !== 'none',
+    // });
 
-    const {
-        isReady: isBackgroundReady,
-        isProcessing: isBackgroundProcessing,
-        error: backgroundError,
-        setBackgroundType: applyBackground,
-        isSupported: isBackgroundSupported,
-    } = useVirtualBackground({
-        videoElement,
-        enabled: settings.backgroundType !== 'none',
-    });
-
-    // Update videoElement ref when videoRef changes
-    useEffect(() => {
-        setVideoElement(videoRef.current);
-    }, []);
+    // Update videoElement ref when videoRef changes - temporarily disabled
+    // useEffect(() => {
+    //     setVideoElement(videoRef.current);
+    // }, []);
 
     // Get available media devices
     useEffect(() => {
@@ -79,21 +77,24 @@ export const MediaTab: React.FC = () => {
                     audioOutputs: deviceList.filter(device => device.kind === 'audiooutput'),
                 });
 
-                // Set default devices
-                const defaultMic = deviceList.find(d => d.kind === 'audioinput' && d.deviceId === 'default');
-                const defaultCam = deviceList.find(d => d.kind === 'videoinput');
-                const defaultSpeaker = deviceList.find(d => d.kind === 'audiooutput' && d.deviceId === 'default');
-
-                setSelectedDevices({
-                    microphone: defaultMic?.deviceId || '',
-                    camera: defaultCam?.deviceId || '',
-                    speaker: defaultSpeaker?.deviceId || '',
-                });
-                setIsVideoEnabled(!!defaultCam); // Set video enabled based on whether a camera is found
+                // Set default devices if not already set in preferences
+                if (!selectedMic) {
+                    const defaultMic = deviceList.find(d => d.kind === 'audioinput' && d.deviceId === 'default');
+                    if (defaultMic) setSelectedMic(defaultMic.deviceId);
+                }
+                if (!selectedCamera) {
+                    const defaultCam = deviceList.find(d => d.kind === 'videoinput');
+                    if (defaultCam) {
+                        setSelectedCamera(defaultCam.deviceId);
+                        setIsVideoEnabled(true);
+                    }
+                }
+                if (!selectedSpeaker) {
+                    const defaultSpeaker = deviceList.find(d => d.kind === 'audiooutput' && d.deviceId === 'default');
+                    if (defaultSpeaker) setSelectedSpeaker(defaultSpeaker.deviceId);
+                }
             } catch (error) {
                 console.error('Error getting devices or permissions:', error);
-                // If permissions are denied, we might not get any devices, or stream setup will fail.
-                // For now, just log the error. Stream setup useEffect will handle specific stream errors.
             }
         };
 
@@ -104,7 +105,7 @@ export const MediaTab: React.FC = () => {
         return () => {
             navigator.mediaDevices.removeEventListener('devicechange', getDevices);
         };
-    }, []);
+    }, [selectedMic, selectedCamera, selectedSpeaker, setSelectedMic, setSelectedCamera, setSelectedSpeaker]);
 
     // Analyze audio levels - defined before useEffect to avoid hoisting issues
     const analyzeAudio = useCallback(() => {
@@ -140,8 +141,8 @@ export const MediaTab: React.FC = () => {
 
                 // Get new stream
                 const constraints: MediaStreamConstraints = {
-                    audio: selectedDevices.microphone ? { deviceId: { exact: selectedDevices.microphone } } : true,
-                    video: selectedDevices.camera && isVideoEnabled ? { deviceId: { exact: selectedDevices.camera } } : false,
+                    audio: selectedMic ? { deviceId: { exact: selectedMic } } : true,
+                    video: selectedCamera && isVideoEnabled ? { deviceId: { exact: selectedCamera } } : false,
                 };
 
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -194,7 +195,7 @@ export const MediaTab: React.FC = () => {
         };
 
         // Only attempt to set up stream if at least one device is selected or available
-        if (selectedDevices.microphone || selectedDevices.camera) {
+        if (selectedMic || selectedCamera) {
             setupStream();
         } else {
             // If no devices are selected, stop any existing stream and reset states
@@ -215,7 +216,6 @@ export const MediaTab: React.FC = () => {
             }
         }
 
-
         return () => {
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
@@ -229,19 +229,19 @@ export const MediaTab: React.FC = () => {
                 audioContextRef.current = null;
             }
         };
-    }, [selectedDevices.microphone, selectedDevices.camera, isVideoEnabled, analyzeAudio]); // isVideoEnabled is a dependency to react to its own changes
+    }, [selectedMic, selectedCamera, isVideoEnabled, analyzeAudio]);
 
     return (
         <div className="space-y-6">
             {/* Video Preview */}
             <div className="relative w-full aspect-video bg-[#1A1D24] rounded-lg overflow-hidden border border-[#313845]">
-                {isVideoEnabled && selectedDevices.camera ? (
+                {isVideoEnabled && selectedCamera ? (
                     <video
                         ref={videoRef}
                         autoPlay
                         playsInline
                         muted
-                        className={`w-full h-full object-cover ${settings.mirrorVideo ? 'scale-x-[-1]' : ''}`}
+                        className={`w-full h-full object-cover ${mirrorVideo ? 'scale-x-[-1]' : ''}`}
                     />
                 ) : (
                     <div className="flex flex-col items-center justify-center w-full h-full text-gray-500">
@@ -315,8 +315,8 @@ export const MediaTab: React.FC = () => {
                     label="Microphone"
                     icon={<Mic className="w-4 h-4" />}
                     devices={devices.audioInputs}
-                    selectedDeviceId={selectedDevices.microphone}
-                    onDeviceChange={(deviceId) => setSelectedDevices(prev => ({ ...prev, microphone: deviceId }))}
+                    selectedDeviceId={selectedMic}
+                    onDeviceChange={setSelectedMic}
                 />
 
                 {/* Camera */}
@@ -324,8 +324,8 @@ export const MediaTab: React.FC = () => {
                     label="Camera"
                     icon={<Video className="w-4 h-4" />}
                     devices={devices.videoInputs}
-                    selectedDeviceId={selectedDevices.camera}
-                    onDeviceChange={(deviceId) => setSelectedDevices(prev => ({ ...prev, camera: deviceId }))}
+                    selectedDeviceId={selectedCamera}
+                    onDeviceChange={setSelectedCamera}
                 />
 
                 {/* Speaker */}
@@ -333,8 +333,8 @@ export const MediaTab: React.FC = () => {
                     label="Speaker"
                     icon={<Volume2 className="w-4 h-4" />}
                     devices={devices.audioOutputs}
-                    selectedDeviceId={selectedDevices.speaker}
-                    onDeviceChange={(deviceId) => setSelectedDevices(prev => ({ ...prev, speaker: deviceId }))}
+                    selectedDeviceId={selectedSpeaker}
+                    onDeviceChange={setSelectedSpeaker}
                 />
             </div>
 
@@ -350,11 +350,11 @@ export const MediaTab: React.FC = () => {
                 <div className="space-y-3">
                     <label className="text-xs text-gray-400 ml-1">Độ phân giải</label>
                     <div className="grid grid-cols-4 gap-2">
-                        {['auto', '360p', '720p', '1080p'].map((quality) => (
+                        {(['auto', '360p', '720p', '1080p'] as const).map((quality) => (
                             <button
                                 key={quality}
-                                onClick={() => setSettings(prev => ({ ...prev, videoQuality: quality }))}
-                                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${settings.videoQuality === quality
+                                onClick={() => setVideoQuality(quality)}
+                                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${videoQuality === quality
                                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
                                     : 'bg-[#222730] text-gray-400 hover:bg-[#2a3042] hover:text-white border border-[#313845]'
                                     }`}
@@ -369,15 +369,13 @@ export const MediaTab: React.FC = () => {
                 <ToggleOption
                     label="Lật ngược video (Mirror)"
                     description="Hiển thị video của bạn như trong gương"
-                    checked={settings.mirrorVideo}
-                    onChange={(checked) => setSettings(prev => ({ ...prev, mirrorVideo: checked }))}
+                    checked={mirrorVideo}
+                    onChange={setMirrorVideo}
                 />
             </div>
 
-            <div className="h-px bg-white/10"></div>
-
-            {/* Audio Enhancements */}
-            <div className="space-y-4">
+            {/* ========== AUDIO ENHANCEMENTS (COMMENTED OUT) ========== */}
+            {/* <div className="space-y-4">
                 <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-2">
                     <Volume2 className="w-4 h-4" />
                     Cải thiện âm thanh
@@ -403,12 +401,12 @@ export const MediaTab: React.FC = () => {
                     checked={settings.autoGainControl}
                     onChange={(checked) => setSettings(prev => ({ ...prev, autoGainControl: checked }))}
                 />
-            </div>
+            </div> */}
 
-            <div className="h-px bg-white/10"></div>
+            {/* <div className="h-px bg-white/10"></div> */}
 
-            {/* Background Effects */}
-            <div className="space-y-4">
+            {/* ========== BACKGROUND EFFECTS (COMMENTED OUT) ========== */}
+            {/* <div className="space-y-4">
                 <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-2">
                         <Sparkles className="w-4 h-4" />
@@ -422,7 +420,6 @@ export const MediaTab: React.FC = () => {
                     </button>
                 </div>
 
-                {/* Current Background Status */}
                 <div className="flex items-center justify-between p-3 rounded-lg bg-[#222730] border border-[#313845]">
                     <div className="flex items-center gap-3">
                         <Sparkles className={`w-5 h-5 ${isBackgroundProcessing ? 'text-blue-400 animate-pulse' : 'text-gray-400'}`} />
@@ -442,7 +439,6 @@ export const MediaTab: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Status indicators */}
                     <div className="flex flex-col items-end gap-1">
                         {!isBackgroundSupported && (
                             <span className="text-xs text-red-400">Không hỗ trợ</span>
@@ -456,14 +452,12 @@ export const MediaTab: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Background Selector - Collapsible */}
                 {showBackgroundSelector && (
                     <div className="border border-[#313845] rounded-lg overflow-hidden">
                         <BackgroundSelector
                             onSelect={async (type, options) => {
                                 setSettings(prev => ({ ...prev, backgroundType: type }));
 
-                                // Apply background to video stream
                                 try {
                                     await applyBackground(type, options);
                                     console.log('✅ Background applied:', type, options);
@@ -476,7 +470,6 @@ export const MediaTab: React.FC = () => {
                     </div>
                 )}
 
-                {/* Info Note */}
                 {!isBackgroundSupported ? (
                     <div className="bg-red-600/10 border border-red-600/20 rounded-lg p-3">
                         <div className="flex items-start gap-2">
@@ -497,7 +490,7 @@ export const MediaTab: React.FC = () => {
                         </div>
                     </div>
                 )}
-            </div>
+            </div> */}
         </div>
     );
 };

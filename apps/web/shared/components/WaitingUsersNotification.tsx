@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { Check, X, Users } from 'lucide-react';
 import type { WaitingUser } from '@video-call/types';
@@ -21,7 +21,7 @@ export const WaitingUsersNotification: React.FC<WaitingUsersNotificationProps> =
     if (waitingUsers.length === 0) return null;
 
     return (
-        <div className="fixed top-24 right-6 z-40 w-80 bg-[#1e2230] border border-[#2e3445] rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-top duration-300">
+        <div className="fixed bottom-10 right-10 z-40 w-80 bg-[#1e2230] border border-[#2e3445] rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-top duration-300">
             {/* Header */}
             <div
                 className="flex items-center justify-between px-4 py-3 bg-blue-600/10 border-b border-[#2e3445] cursor-pointer"
@@ -33,9 +33,9 @@ export const WaitingUsersNotification: React.FC<WaitingUsersNotificationProps> =
                     </div>
                     <div>
                         <p className="text-sm font-semibold text-white">
-                            {waitingUsers.length} waiting to join
+                            {waitingUsers.length} người đang chờ
                         </p>
-                        <p className="text-xs text-gray-400">Click to {isExpanded ? 'collapse' : 'expand'}</p>
+                        <p className="text-xs text-gray-400">Nhấn để {isExpanded ? 'thu gọn' : 'mở rộng'}</p>
                     </div>
                 </div>
                 <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
@@ -69,6 +69,22 @@ interface WaitingUserItemProps {
 
 const WaitingUserItem: React.FC<WaitingUserItemProps> = ({ user, onAdmit, onReject }) => {
     const [isProcessing, setIsProcessing] = useState(false);
+    const [waitingTime, setWaitingTime] = useState('');
+
+    // Update waiting time every second
+    useEffect(() => {
+        const updateTime = () => {
+            setWaitingTime(getWaitingTime(user.joinedAt));
+        };
+
+        // Initial update
+        updateTime();
+
+        // Update every second
+        const interval = setInterval(updateTime, 1000);
+
+        return () => clearInterval(interval);
+    }, [user.joinedAt]);
 
     const handleAdmit = async () => {
         setIsProcessing(true);
@@ -99,7 +115,7 @@ const WaitingUserItem: React.FC<WaitingUserItemProps> = ({ user, onAdmit, onReje
                 <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-white truncate">{user.displayName}</p>
                     <p className="text-xs text-gray-400">
-                        Waiting {getWaitingTime(user.joinedAt)}
+                        Đang chờ {waitingTime}
                     </p>
                 </div>
             </div>
@@ -110,7 +126,7 @@ const WaitingUserItem: React.FC<WaitingUserItemProps> = ({ user, onAdmit, onReje
                     onClick={handleAdmit}
                     disabled={isProcessing}
                     className="p-2 rounded-lg bg-green-600 hover:bg-green-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Admit"
+                    title="Cho phép"
                 >
                     <Check className="w-4 h-4" />
                 </button>
@@ -118,7 +134,7 @@ const WaitingUserItem: React.FC<WaitingUserItemProps> = ({ user, onAdmit, onReje
                     onClick={handleReject}
                     disabled={isProcessing}
                     className="p-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Reject"
+                    title="Từ chối"
                 >
                     <X className="w-4 h-4" />
                 </button>
@@ -134,9 +150,9 @@ function getWaitingTime(joinedAt: Date): string {
     const diffMs = now.getTime() - joined.getTime();
     const diffSec = Math.floor(diffMs / 1000);
 
-    if (diffSec < 60) return `${diffSec}s ago`;
+    if (diffSec < 60) return `${diffSec} giây`;
     const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `${diffMin}m ago`;
+    if (diffMin < 60) return `${diffMin} phút`;
     const diffHour = Math.floor(diffMin / 60);
-    return `${diffHour}h ago`;
+    return `${diffHour} giờ`;
 }

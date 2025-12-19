@@ -34,6 +34,7 @@ import { KeyboardShortcutsHelp } from '@/shared/components/KeyboardShortcutsHelp
 import { WaitingRoomScreen } from '@/domains/room/components/WaitingRoomScreen';
 import { ConnectionStatus } from '@/shared/components/ConnectionStatus';
 import { PasswordModal } from '@/shared/components/PasswordModal';
+import { RoomNotFoundModal } from '@/shared/components/RoomNotFoundModal';
 import { MobileChat } from '@/domains/chat/components/MobileChat';
 
 const RoomSettingsModal = dynamic(
@@ -85,6 +86,7 @@ export default function RoomPage() {
         isInWaitingRoom,
         isHost,
         permissions,
+        showRoomNotFound,
         showPasswordModal,
         passwordError,
         isValidatingPassword,
@@ -224,6 +226,11 @@ export default function RoomPage() {
     }), []);
 
     // Render logic
+    // Show room not found modal immediately
+    if (showRoomNotFound) {
+        return <RoomNotFoundModal isOpen={showRoomNotFound} />;
+    }
+
     if (isCheckingHost) {
         return (
             <div className="flex items-center justify-center h-screen bg-[#0b0e11]">
@@ -343,7 +350,8 @@ export default function RoomPage() {
                     isOpen={isSettingsModalOpen}
                     onClose={() => setIsSettingsModalOpen(false)}
                     roomId={roomId}
-                    participants={participantsForSidebar}
+                    isHost={isHost}
+                    isJoined={isJoined}
                 />
             )}
 

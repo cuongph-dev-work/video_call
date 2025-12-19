@@ -60,6 +60,42 @@ export class SignalingGateway
       await this.roomsService.handleDisconnect(userId);
       this.socketIdToUserId.delete(client.id);
 
+      // Check if user was in any waiting queue and remove them
+      // Note: We need to check all rooms because we don't track which room they were waiting for
+      // In production, you might want to track this mapping
+      try {
+        // Get all room keys from Redis to check waiting queues
+        const allRooms = await this.redis.keys('room:*:waiting');
+        
+        for (const key of allRooms) {
+          // Extract roomId from key format: room:{roomId}:waiting
+          const roomId = key.split(':')[1];
+          
+          const isWaiting = await this.waitingRoomService.isUserWaiting(roomId, userId);
+          if (isWaiting) {
+            // Remove from waiting queue
+            await this.waitingRoomService.removeFromWaitingQueue(roomId, userId);
+            
+            // Update waiting count for host
+            const waitingCount = await this.waitingRoomService.getWaitingCount(roomId);
+            this.server.to(roomId).emit('waiting-count-updated', {
+              waitingCount,
+            });
+            
+            // Emit updated waiting users list to host
+            const waitingUsers = await this.waitingRoomService.getWaitingUsers(roomId);
+            this.server.to(roomId).emit('waiting-users-list', {
+              roomId,
+              users: waitingUsers,
+            });
+            
+            this.logger.log(`Removed disconnected user ${userId} from waiting queue of room ${roomId}`);
+          }
+        }
+      } catch (error) {
+        this.logger.error(`Error cleaning up waiting user ${userId}:`, error);
+      }
+
       // We don't have roomId here, so we can't emit user-left easily to a specific room
       // However, handleDisconnect in roomsService should handle the cleanup.
       // We might need to track which room the user was in if we want to emit user-left.

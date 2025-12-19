@@ -1,15 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Shield, Users, Mic } from 'lucide-react';
 import { SecurityTab } from './SecurityTab';
 import { MediaTab } from './MediaTab';
 import { ParticipantsTab } from './ParticipantsTab';
+import { useRoomSettings } from '@/domains/room/hooks/useRoomSettings';
+import type { RoomSettingsState, RoomPermissions } from '@video-call/types';
 
 interface RoomSettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
     roomId: string;
+    isHost: boolean;
+    isJoined: boolean;
     participants?: {
         id: string;
         displayName: string;
@@ -24,9 +28,97 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
     isOpen,
     onClose,
     roomId,
+    isHost,
+    isJoined,
     participants = [],
 }) => {
-    const [activeTab, setActiveTab] = useState<TabType>('security');
+    const [activeTab, setActiveTab] = useState<TabType>(isHost ? 'security' : 'participants');
+
+    // Get room settings from hook
+    const {
+        settings: serverSettings,
+        permissions: serverPermissions,
+        isLoading,
+        updateSettings,
+        updatePermission,
+    } = useRoomSettings({ roomId, isJoined, isHost });
+
+    // Local state for pending changes (initialize with defaults to avoid undefined)
+    const [localSettings, setLocalSettings] = useState<RoomSettingsState>({
+        ...serverSettings,
+        permissions: serverPermissions,
+    });
+    const [localPermissions, setLocalPermissions] = useState<RoomPermissions>({
+        allowMicrophone: serverPermissions.allowMicrophone ?? true,
+        allowCamera: serverPermissions.allowCamera ?? true,
+        allowScreenShare: serverPermissions.allowScreenShare ?? true,
+        allowChat: serverPermissions.allowChat ?? true,
+    });
+
+    // Sync local state with server state when modal opens
+    useEffect(() => {
+        if (isOpen) {
+            setLocalSettings({
+                ...serverSettings,
+                permissions: serverPermissions,
+            });
+            setLocalPermissions({
+                allowMicrophone: serverPermissions.allowMicrophone ?? true,
+                allowCamera: serverPermissions.allowCamera ?? true,
+                allowScreenShare: serverPermissions.allowScreenShare ?? true,
+                allowChat: serverPermissions.allowChat ?? true,
+            });
+        }
+    }, [isOpen, serverSettings, serverPermissions]);
+
+    // Update local settings
+    const updateLocalSettings = (updates: Partial<RoomSettingsState>) => {
+        setLocalSettings(prev => ({
+            ...prev,
+            ...updates,
+        }));
+
+        // Also update permissions if provided
+        if (updates.permissions) {
+            setLocalPermissions(prev => ({
+                ...prev,
+                ...updates.permissions,
+            }));
+        }
+    };
+
+    // Update local permission
+    const updateLocalPermission = (key: keyof RoomPermissions, value: boolean) => {
+        setLocalPermissions(prev => ({ ...prev, [key]: value }));
+    };
+
+    // Save changes to server
+    const handleSave = () => {
+        if (!isHost) return;
+
+        // Commit all changes
+        updateSettings({
+            ...localSettings,
+            permissions: localPermissions,
+        });
+
+        onClose();
+    };
+
+    // Discard changes and close
+    const handleCancel = () => {
+        setLocalSettings({
+            ...serverSettings,
+            permissions: serverPermissions,
+        });
+        setLocalPermissions({
+            allowMicrophone: serverPermissions.allowMicrophone ?? true,
+            allowCamera: serverPermissions.allowCamera ?? true,
+            allowScreenShare: serverPermissions.allowScreenShare ?? true,
+            allowChat: serverPermissions.allowChat ?? true,
+        });
+        onClose();
+    };
 
     if (!isOpen) return null;
 
@@ -54,12 +146,14 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                 <div className="flex flex-1 overflow-hidden">
                     {/* Sidebar Tabs - Desktop */}
                     <div className="w-1/4 min-w-[160px] bg-[#1e2230]/50 border-r border-[#2e3445] py-4 hidden sm:flex flex-col gap-1 px-3">
-                        <TabButton
-                            icon={<Shield className="w-4 h-4" />}
-                            label="Bảo mật"
-                            active={activeTab === 'security'}
-                            onClick={() => setActiveTab('security')}
-                        />
+                        {isHost && (
+                            <TabButton
+                                icon={<Shield className="w-4 h-4" />}
+                                label="Bảo mật"
+                                active={activeTab === 'security'}
+                                onClick={() => setActiveTab('security')}
+                            />
+                        )}
                         <TabButton
                             icon={<Users className="w-4 h-4" />}
                             label="Tham gia"
@@ -76,14 +170,24 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
 
                     {/* Mobile Tabs */}
                     <div className="sm:hidden w-full border-b border-[#2e3445] flex overflow-x-auto gap-4 px-4">
-                        <MobileTab label="Bảo mật" active={activeTab === 'security'} onClick={() => setActiveTab('security')} />
+                        {isHost && <MobileTab label="Bảo mật" active={activeTab === 'security'} onClick={() => setActiveTab('security')} />}
                         <MobileTab label="Tham gia" active={activeTab === 'participants'} onClick={() => setActiveTab('participants')} />
                         <MobileTab label="Media" active={activeTab === 'media'} onClick={() => setActiveTab('media')} />
                     </div>
 
                     {/* Tab Content */}
                     <div className="flex-1 overflow-y-auto p-6">
-                        {activeTab === 'security' && <SecurityTab roomId={roomId} />}
+                        {activeTab === 'security' && isHost && (
+                            <SecurityTab
+                                roomId={roomId}
+                                settings={localSettings}
+                                permissions={localPermissions}
+                                isHost={isHost}
+                                isLoading={isLoading}
+                                updateSettings={updateLocalSettings}
+                                updatePermission={updateLocalPermission}
+                            />
+                        )}
                         {activeTab === 'participants' && <ParticipantsTab participants={participants} />}
                         {activeTab === 'media' && <MediaTab />}
                     </div>
@@ -92,12 +196,16 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                 {/* Footer */}
                 <div className="px-6 py-4 border-t border-[#2e3445] bg-[#1e2230]/90 backdrop-blur rounded-b-2xl flex justify-end gap-3">
                     <button
-                        onClick={onClose}
+                        onClick={handleCancel}
                         className="px-5 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-[#2a3042] transition-all"
                     >
                         Hủy bỏ
                     </button>
-                    <button className="px-6 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/30 transition-all">
+                    <button
+                        onClick={handleSave}
+                        disabled={!isHost}
+                        className="px-6 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
                         Lưu thay đổi
                     </button>
                 </div>
