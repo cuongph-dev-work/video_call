@@ -6,16 +6,16 @@ import { usePreferencesStore } from '@/shared/stores/usePreferencesStore';
 export function useLocalStream() {
   // Get preferences from store
   const {
-    selectedMic: storedMic,
-    selectedCamera: storedCamera,
-    selectedSpeaker: storedSpeaker,
-    audioEnabled: storedAudioEnabled,
-    videoEnabled: storedVideoEnabled,
-    setSelectedMic: updateStoredMic,
-    setSelectedCamera: updateStoredCamera,
-    setSelectedSpeaker: updateStoredSpeaker,
-    setAudioEnabled: updateStoredAudioEnabled,
-    setVideoEnabled: updateStoredVideoEnabled,
+    selectedMic,
+    selectedCamera,
+    selectedSpeaker,
+    audioEnabled,
+    videoEnabled,
+    setSelectedMic,
+    setSelectedCamera,
+    setSelectedSpeaker,
+    setAudioEnabled,
+    setVideoEnabled,
   } = usePreferencesStore();
 
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -23,27 +23,25 @@ export function useLocalStream() {
   const [error, setError] = useState<string | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Use store values with local state fallback
-  const [selectedMic, setSelectedMic] = useState<string>(storedMic);
-  const [selectedCamera, setSelectedCamera] = useState<string>(storedCamera);
-  const [selectedSpeaker, setSelectedSpeaker] = useState<string>(storedSpeaker);
-  const [audioEnabled, setAudioEnabled] = useState(storedAudioEnabled);
-  const [videoEnabled, setVideoEnabled] = useState(storedVideoEnabled);
-
   // Initialize stream when devices are selected
   useEffect(() => {
     let isMounted = true;
 
     const initDevicesAndStream = async () => {
       try {
-        // First, request permissions to get actual device labels
-        // This is critical for incognito mode where localStorage is empty
-        const permissionStream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video: true,
-        });
+        // Get LATEST state from store (handles fast hydration)
+        const currentStore = usePreferencesStore.getState();
 
-        // Now enumerate devices (will have actual labels after permission)
+        // First, request permissions to get actual device labels
+        // Only request video if enabled to prevent camera flash on F5
+        const permissionConstraints = {
+          audio: true,
+          video: currentStore.videoEnabled,
+        };
+
+        const permissionStream = await navigator.mediaDevices.getUserMedia(permissionConstraints);
+
+        // Now enumerate devices
         const deviceList = await navigator.mediaDevices.enumerateDevices();
         if (!isMounted) {
           permissionStream.getTracks().forEach(track => track.stop());
@@ -56,33 +54,24 @@ export function useLocalStream() {
         const videoInputs = deviceList.filter(d => d.kind === 'videoinput');
         const audioOutputs = deviceList.filter(d => d.kind === 'audiooutput');
 
-        // Set default devices: use stored values or first available
-        const defaultMic = storedMic || (audioInputs.length > 0 ? audioInputs[0].deviceId : '');
-        const defaultCamera = storedCamera || (videoInputs.length > 0 ? videoInputs[0].deviceId : '');
-        const defaultSpeaker = storedSpeaker || (audioOutputs.length > 0 ? audioOutputs[0].deviceId : '');
+        // Set default devices if not set in store
+        const defaultMic = currentStore.selectedMic || (audioInputs.length > 0 ? audioInputs[0].deviceId : '');
+        const defaultCamera = currentStore.selectedCamera || (videoInputs.length > 0 ? videoInputs[0].deviceId : '');
+        const defaultSpeaker = currentStore.selectedSpeaker || (audioOutputs.length > 0 ? audioOutputs[0].deviceId : '');
         
-        setSelectedMic(defaultMic);
-        setSelectedCamera(defaultCamera);
-        setSelectedSpeaker(defaultSpeaker);
-        
-        // Update store with defaults if not set
-        if (!storedMic && defaultMic) updateStoredMic(defaultMic);
-        if (!storedCamera && defaultCamera) updateStoredCamera(defaultCamera);
-        if (!storedSpeaker && defaultSpeaker) updateStoredSpeaker(defaultSpeaker);
+        // Sync defaults to store if needed
+        if (!currentStore.selectedMic && defaultMic) setSelectedMic(defaultMic);
+        if (!currentStore.selectedCamera && defaultCamera) setSelectedCamera(defaultCamera);
+        if (!currentStore.selectedSpeaker && defaultSpeaker) setSelectedSpeaker(defaultSpeaker);
 
-        // Stop permission stream - we'll create a new one with specific devices
+        // Stop permission stream
         permissionStream.getTracks().forEach(track => track.stop());
 
-        // Now initialize the actual stream with selected devices
+        // Initialize actual stream
+        // Note: We respect stored enabled states for initial constraints to avoid flash
         if (!defaultMic || !defaultCamera) {
           setError('No camera or microphone found');
           return;
-        }
-
-        // Stop previous stream before creating new one
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach(track => track.stop());
-          streamRef.current = null;
         }
 
         const constraints: MediaStreamConstraints = {
@@ -92,13 +81,19 @@ export function useLocalStream() {
             autoGainControl: true,
             deviceId: { exact: defaultMic },
           },
-          video: {
+          video: currentStore.videoEnabled ? {
             width: { ideal: 1280 },
             height: { ideal: 720 },
             facingMode: 'user',
             deviceId: { exact: defaultCamera },
-          },
+          } : false,
         };
+
+        // If video is disabled, constraints.video is false.
+        // getUserMedia must have at least one true.
+        if (constraints.video === false && !constraints.audio) {
+             // Should not happen as we always set audio constraint object
+        }
 
         const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
         
@@ -106,6 +101,11 @@ export function useLocalStream() {
           mediaStream.getTracks().forEach(track => track.stop());
           return;
         }
+
+        // Apply initial audio state
+        mediaStream.getAudioTracks().forEach(track => {
+            track.enabled = currentStore.audioEnabled;
+        });
 
         streamRef.current = mediaStream;
         setStream(mediaStream);
@@ -131,77 +131,78 @@ export function useLocalStream() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run once on mount
 
-  const toggleAudio = () => {
+  // Sync Audio State
+  useEffect(() => {
     if (stream) {
-      const newState = !audioEnabled;
       stream.getAudioTracks().forEach(track => {
-        track.enabled = newState;
+        track.enabled = audioEnabled;
       });
-      setAudioEnabled(newState);
-      updateStoredAudioEnabled(newState); // Persist to store
     }
-  };
+  }, [stream, audioEnabled]);
 
-  const toggleVideo = async () => {
-    if (!stream) return;
+  // Sync Video State
+  useEffect(() => {
+    if (!streamRef.current) return;
 
-    const currentlyEnabled = videoEnabled;
-    
-    if (currentlyEnabled) {
-      // Turning OFF: Stop video tracks completely to turn off camera LED
-      stream.getVideoTracks().forEach(track => {
-        track.stop(); // Stop track completely (turns off camera LED)
-      });
-      
-      // Remove video tracks from stream
-      stream.getVideoTracks().forEach(track => {
-        stream.removeTrack(track);
-      });
-      
-      setVideoEnabled(false);
-      updateStoredVideoEnabled(false); // Persist to store
-    } else {
-      // Turning ON: Request new video track
-      try {
-        // Request video track with selected device
-        const videoConstraints: MediaStreamConstraints = {
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: 'user',
-            deviceId: selectedCamera ? { exact: selectedCamera } : undefined,
-          },
-        };
+    const handleVideoStateChange = async () => {
+      const stream = streamRef.current;
+      if (!stream) return;
 
-        const tempStream = await navigator.mediaDevices.getUserMedia(videoConstraints);
-        const newVideoTrack = tempStream.getVideoTracks()[0];
+      const hasVideoTrack = stream.getVideoTracks().length > 0;
 
-        // Add new video track to current stream
-        if (streamRef.current) {
-          streamRef.current.addTrack(newVideoTrack);
+      if (videoEnabled && !hasVideoTrack) {
+        // Turn ON: Request new track
+        try {
+          const videoConstraints: MediaStreamConstraints = {
+            video: {
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              facingMode: 'user',
+              deviceId: selectedCamera ? { exact: selectedCamera } : undefined,
+            },
+          };
+
+          const tempStream = await navigator.mediaDevices.getUserMedia(videoConstraints);
+          const newVideoTrack = tempStream.getVideoTracks()[0];
+
+          stream.addTrack(newVideoTrack);
           
-          // Create new stream to trigger video element update
-          const newStream = new MediaStream(streamRef.current.getTracks());
+          // Trigger re-render
+          const newStream = new MediaStream(stream.getTracks());
           streamRef.current = newStream;
           setStream(newStream);
+          setError(null);
+        } catch (err) {
+            console.error('Failed to turn on camera:', err);
+            setError('Failed to turn on camera');
+            // Revert state if failed
+            setVideoEnabled(false);
         }
-
-        setVideoEnabled(true);
-        updateStoredVideoEnabled(true); // Persist to store
-        setError(null);
-      } catch (err) {
-        console.error('Failed to restart camera:', err);
-        setError('Failed to turn on camera');
+      } else if (!videoEnabled && hasVideoTrack) {
+        // Turn OFF: Stop tracks
+        stream.getVideoTracks().forEach(track => {
+          track.stop();
+          stream.removeTrack(track);
+        });
+        
+        // Trigger re-render (to remove video element)
+        const newStream = new MediaStream(stream.getTracks());
+        streamRef.current = newStream;
+        setStream(newStream);
       }
-    }
-  };
+    };
+
+    void handleVideoStateChange();
+  }, [videoEnabled, selectedCamera, stream]); // Added stream to dependencies
+
+  // Helper actions that just update the store
+  const toggleAudio = () => setAudioEnabled(!audioEnabled);
+  const toggleVideo = () => setVideoEnabled(!videoEnabled);
 
   const switchMicrophone = async (deviceId: string) => {
     if (!streamRef.current) return;
-
     try {
-      // Get new audio track with selected device
-      const audioConstraints: MediaStreamConstraints = {
+      const audioConstraints = {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -212,23 +213,16 @@ export function useLocalStream() {
 
       const tempStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
       const newAudioTrack = tempStream.getAudioTracks()[0];
-      
-      // Set enabled state to match current state
       newAudioTrack.enabled = audioEnabled;
 
-      // Remove old audio track from current stream
-      const oldAudioTracks = streamRef.current.getAudioTracks();
-      oldAudioTracks.forEach(track => {
+      const oldTracks = streamRef.current.getAudioTracks();
+      oldTracks.forEach(track => {
         streamRef.current!.removeTrack(track);
         track.stop();
       });
 
-      // Add new audio track to current stream  
       streamRef.current.addTrack(newAudioTrack);
-      
-      // Update local and store state
       setSelectedMic(deviceId);
-      updateStoredMic(deviceId); // Persist to store
     } catch (err) {
       console.error('Failed to switch microphone:', err);
       setError('Failed to switch microphone');
@@ -236,11 +230,18 @@ export function useLocalStream() {
   };
 
   const switchCamera = async (deviceId: string) => {
-    if (!streamRef.current) return;
+     // Just update store, the Video Effect will handle re-negotiating if needed?
+     // OR we handle it here explicitly if video is ON.
+     if (!videoEnabled) {
+         setSelectedCamera(deviceId);
+         return;
+     }
+     
+     // If video is ON, we need to swap tracks
+     if (!streamRef.current) return;
 
     try {
-      // Get new video track with selected device
-      const videoConstraints: MediaStreamConstraints = {
+      const videoConstraints = {
         video: {
           width: { ideal: 1280 },
           height: { ideal: 720 },
@@ -252,25 +253,18 @@ export function useLocalStream() {
       const tempStream = await navigator.mediaDevices.getUserMedia(videoConstraints);
       const newVideoTrack = tempStream.getVideoTracks()[0];
       
-      // Set enabled state to match current state  
-      newVideoTrack.enabled = videoEnabled;
-
-      // Remove old video track from current stream
-      const oldVideoTracks = streamRef.current.getVideoTracks();
-      oldVideoTracks.forEach(track => {
+      const oldTracks = streamRef.current.getVideoTracks();
+      oldTracks.forEach(track => {
         streamRef.current!.removeTrack(track);
         track.stop();
       });
 
-      // Add new video track to current stream
       streamRef.current.addTrack(newVideoTrack);
       
-      // For camera switch, create new stream to trigger video element update
       const newStream = new MediaStream(streamRef.current.getTracks());
       streamRef.current = newStream;
-      setStream(newStream); // This triggers re-render for camera preview
+      setStream(newStream);
       setSelectedCamera(deviceId);
-      updateStoredCamera(deviceId); // Persist to store
     } catch (err) {
       console.error('Failed to switch camera:', err);
       setError('Failed to switch camera');
@@ -279,18 +273,14 @@ export function useLocalStream() {
 
   const switchSpeaker = async (deviceId: string, audioElement?: HTMLAudioElement | HTMLVideoElement) => {
     try {
-      // Check if browser supports setSinkId
       if (!audioElement || !('setSinkId' in HTMLMediaElement.prototype)) {
         console.warn('setSinkId is not supported in this browser');
         setError('Speaker switching not supported in this browser');
         return;
       }
-
-      // Type assertion for setSinkId (not in standard TypeScript types yet)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (audioElement as any).setSinkId(deviceId);
       setSelectedSpeaker(deviceId);
-      updateStoredSpeaker(deviceId); // Persist to store
     } catch (err) {
       console.error('Failed to switch speaker:', err);
       setError('Failed to switch speaker');

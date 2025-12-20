@@ -108,7 +108,7 @@ const WaitingUserItem: React.FC<WaitingUserItemProps> = ({ user, onAdmit, onReje
                         className="w-10 h-10 rounded-full object-cover"
                     />
                 ) : (
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                    <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
                         {user.displayName.charAt(0).toUpperCase()}
                     </div>
                 )}

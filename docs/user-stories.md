@@ -349,6 +349,238 @@ const isValidUsername = (name: string) => {
 
 ---
 
+### US-3.3.1: Video quality selection
+
+**As a** người dùng  
+**I want to** chọn chất lượng video phù hợp  
+**So that** tối ưu giữa chất lượng và băng thông
+
+**Acceptance Criteria:**
+- [x] Cho phép chọn resolution: Auto, 360p, 720p, 1080p
+- [x] Settings được lưu vào preferences store (persistent)
+- [x] Button group hiển thị active state rõ ràng
+- [x] Default: Auto (tự động điều chỉnh theo bandwidth)
+- [x] Apply settings ngay lập tức khi thay đổi
+
+**Technical Notes:**
+- Component: `MediaTab.tsx`
+- Store: `usePreferencesStore.videoQuality`
+- Constraint: Apply resolution vào `getUserMedia()` constraints
+
+**Status**: ✅ Implemented
+
+---
+
+### US-3.3.2: Mirror video toggle
+
+**As a** người dùng  
+**I want to** lật ngược video của mình như trong gương  
+**So that** thấy được bản thân một cách tự nhiên hơn
+
+**Acceptance Criteria:**
+- [x] Toggle "Mirror Video" trong Media settings
+- [x] Video preview được flip horizontally khi enabled
+- [x] Settings được persist vào localStorage
+- [x] Default: true (mirrored)
+- [x] Chỉ apply cho local preview, không ảnh hưởng đến remote streams
+
+**Technical Notes:**
+- Component: `MediaTab.tsx`, `PreJoinScreen.tsx`
+- CSS: `scale-x-[-1]` khi `mirrorVideo === true`
+- Store: `usePreferencesStore.mirrorVideo`
+
+**Status**: ✅ Implemented
+
+---
+
+### US-3.3.3: Audio level visualization
+
+**As a** người dùng  
+**I want to** xem mức âm thanh microphone realtime  
+**So that** biết mic có hoạt động và điều chỉnh âm lượng phù hợp
+
+**Acceptance Criteria:**
+- [x] Horizontal bar visualization với 25 bars
+- [x] Real-time update (60fps) từ AudioContext analyzer
+- [x] Color zones:
+  - 0-60%: Green (safe)
+  - 60-80%: Yellow (caution)
+  - 80-100%: Red (too loud)
+- [x] Percentage display bên cạnh bars
+- [x] Speaker icon thay đổi màu khi có audio
+- [x] Smooth animation transitions
+
+**Technical Notes:**
+- Component: `MediaTab.tsx`
+- API: Web Audio API với `AnalyserNode`
+- FFT Size: 256
+- Update: `requestAnimationFrame` loop
+
+**Status**: ✅ Implemented
+
+---
+
+### US-3.3.4: Speaker (audio output) selection
+
+**As a** người dùng  
+**I want to** chọn loa/headphone để phát âm thanh  
+**So that** nghe được audio từ thiết bị mong muốn
+
+**Acceptance Criteria:**
+- [x] Dropdown hiển thị danh sách audio output devices
+- [x] Cho phép chọn speaker/headphone khác nhau
+- [x] Settings được lưu vào preferences
+- [x] Auto-detect khi plug/unplug devices
+- [x] Apply selection vào video element via `setSinkId()`
+
+**Technical Notes:**
+- Component: `DeviceSelect.tsx`, `MediaTab.tsx`
+- API: `HTMLMediaElement.setSinkId()`
+- Store: `usePreferencesStore.selectedSpeaker`
+- Event: `navigator.mediaDevices.addEventListener('devicechange')`
+
+**Status**: ✅ Implemented
+
+---
+
+### US-3.3.5: Persistent user preferences
+
+**As a** người dùng  
+**I want to** preferences được tự động lưu  
+**So that** không cần cấu hình lại mỗi lần join meeting
+
+**Acceptance Criteria:**
+- [x] Display name được persist vào localStorage
+- [x] Selected devices (mic, camera, speaker) được persist
+- [x] Audio/video enabled states được persist
+- [x] Video quality preference được persist
+- [x] Mirror video setting được persist
+- [x] Sử dụng Zustand store với persist middleware
+- [x] Auto-restore khi load page
+
+**Technical Notes:**
+- Store: `usePreferencesStore` (Zustand + persist middleware)
+- Storage key: `user-preferences`
+- Fields: `displayName`, `selectedMic`, `selectedCamera`, `selectedSpeaker`, `audioEnabled`, `videoEnabled`, `videoQuality`, `mirrorVideo`, `userId`
+
+**Status**: ✅ Implemented
+
+---
+
+### US-3.3.6: Device change detection
+
+**As a** người dùng  
+**I want to** hệ thống tự động phát hiện khi tôi plug/unplug devices  
+**So that** danh sách devices luôn cập nhật
+
+**Acceptance Criteria:**
+- [x] Listen to `devicechange` event
+- [x] Auto-refresh device list khi có thay đổi
+- [x] Nếu selected device bị disconnect → auto-switch to default
+- [x] Toast notification khi device bị removed (optional)
+
+**Technical Notes:**
+- Event: `navigator.mediaDevices.addEventListener('devicechange', ...)`
+- Component: `MediaTab.tsx`, `useLocalStream.ts`
+- Cleanup: Remove listener on unmount
+
+**Status**: ✅ Implemented
+
+---
+
+
+### US-3.4: Session persistence - Page refresh
+
+**As a** người dùng  
+**I want to** vẫn ở trong room sau khi refresh (F5) trang  
+**So that** không bị disconnect và phải join lại từ đầu
+
+**Acceptance Criteria:**
+- [ ] Khi user (host hoặc participant) refresh trang trong lúc đang join room
+- [ ] User tự động reconnect vào room (không cần nhập lại room code)
+- [ ] Local stream được khởi tạo lại với settings cũ (audio/video state)
+- [ ] Remote streams từ các participants khác tự động kết nối lại
+- [ ] Room state (participants list, chat messages) được restore
+- [ ] Không hiển thị duplicate entries trong participants list
+- [ ] Connection quality indicator hiển thị "Reconnecting..." trong quá trình reconnect
+
+**Technical Notes:**
+- Room ID được lấy từ URL params khi refresh
+- Socket reconnection với `socket.io-client` auto-reconnect
+- Re-emit `join-room` event sau khi reconnect
+- Peer connections được tạo lại thông qua signaling flow
+- Cache room state trong sessionStorage (optional)
+
+**Edge Cases:**
+- Nếu room đã expire (TTL hết) → redirect về home với error
+- Nếu user bị kick/banned trước khi refresh → block rejoin
+
+---
+
+### US-3.5: Host leave behavior - Users remain in room
+
+**As a** participant  
+**I want to** vẫn ở lại room khi host rời phòng  
+**So that** có thể tiếp tục cuộc họp với những người còn lại
+
+**Acceptance Criteria:**
+- [ ] Khi host leave room (click "End Call"), host được redirect về home
+- [ ] Tất cả participants nhận notification: "Host [Name] đã rời phòng"
+- [ ] Participants **KHÔNG** bị kick ra khỏi room
+- [ ] Participants vẫn có thể:
+  - Xem và nghe các participants khác
+  - Chat với nhau
+  - Share screen
+  - Sử dụng tất cả controls (mute/unmute, video toggle)
+- [ ] Room settings vẫn được giữ nguyên
+- [ ] Room vẫn tồn tại cho đến khi người cuối cùng leave hoặc TTL hết
+
+**Technical Notes:**
+- Backend: Host leaving không trigger room cleanup
+- Socket event: `user-left` với flag `isHost: true`
+- Frontend: Toast notification hiển thị host left
+- Room ownership không được chuyển giao (no automatic promotion)
+- Room chỉ bị xóa khi `participantCount === 0` hoặc Redis TTL expires
+
+**Future Enhancement:**
+- Optional: Promote người tham gia đầu tiên thành host mới
+- Optional: Host có thể set "End meeting for all" để kick tất cả
+
+---
+
+### US-3.6: Host rejoin behavior - Automatic reconnection
+
+**As a** host  
+**I want to** join lại phòng sau khi đã leave  
+**So that** có thể quay lại cuộc họp nếu cần
+
+**Acceptance Criteria:**
+- [ ] Host có thể join lại room bằng cách:
+  - Nhập lại room code từ home page
+  - Click vào link/bookmark của room
+- [ ] Khi host join lại:
+  - Host vào pre-join screen như bình thường
+  - Sau khi click "Join", host join vào room thành công
+  - Host thấy danh sách participants hiện tại (những người vẫn còn trong room)
+- [ ] Tất cả participants đang trong room nhận notification: "Host [Name] joined"
+- [ ] Remote streams giữa host và participants tự động kết nối lại thông qua WebRTC signaling
+- [ ] Host có lại quyền host (access to room settings, admit/reject waiting users)
+
+**Technical Notes:**
+- Backend: `RoomsService.joinRoom()` check `userId === hostId` để assign `isHost: true`
+- Socket event: `user-joined` với flag `isHost: true`
+- Peer connections được thiết lập lại qua offer/answer exchange
+- Host status được restore từ room data trong Redis
+- Frontend: Toast notification "Host has rejoined the meeting"
+
+**Edge Cases:**
+- Nếu host rejoin nhưng room đã expire → hiển thị error "Room no longer exists"
+- Nếu có waiting room enabled, host không cần approval để rejoin
+- Host rejoin không kick participants hiện tại
+- Host settings từ lần trước được giữ nguyên (permissions, password, etc.)
+
+---
+
 ## Epic 4: Chat System
 
 ### US-4.1: Group chat
@@ -454,6 +686,31 @@ const isValidUsername = (name: string) => {
 
 ---
 
+### US-5.2.1: Allow join before host
+
+**As a** host  
+**I want to** cho phép participants join trước khi tôi vào  
+**So that** họ không phải chờ đợi
+
+**Acceptance Criteria:**
+- [x] Toggle "Cho phép tham gia trước chủ phòng" trong Participants tab
+- [x] Default: false (participants phải chờ host)
+- [x] Khi enabled: participants có thể join ngay mà không cần host present
+- [x] Khi disabled: participants phải vào waiting room hoặc thấy message "Host chưa join"
+- [x] Setting được lưu vào room configuration
+- [x] Badge "New" để highlight tính năng mới
+
+**Technical Notes:**
+- Component: `ParticipantsTab.tsx`
+- Setting: `allowJoinBeforeHost: boolean`
+- Backend: Check setting trong join-room flow
+- UI: Toggle với description rõ ràng
+
+**Status**: ✅ Implemented (UI ready, backend integration needed)
+
+---
+
+
 ### US-5.3: Room settings modal
 
 **As a** host  
@@ -494,6 +751,36 @@ const isValidUsername = (name: string) => {
 - Check: `RoomSettingsService.isRoomLocked()`
 
 ---
+
+### US-5.4.1: Real-time room settings sync
+
+**As a** participant  
+**I want to** nhận update realtime khi host thay đổi settings  
+**So that** luôn biết quyền hạn và setting hiện tại của room
+
+**Acceptance Criteria:**
+- [x] Host update settings → broadcast tới tất cả participants qua socket
+- [x] Socket events:
+  - `room:settings` - Host emit khi update
+  - `room:settings-changed` - Broadcast tới all participants
+  - `room:get-settings` - Request current settings
+  - `room:settings-sync` - Response với settings data
+- [x] Participants nhận được settings update realtime (không cần refresh)
+- [x] Password không được broadcast (security)
+- [x] Settings include: permissions, lockRoom, requirePassword, roomName
+- [x] Only host có quyền update settings (backend validation)
+
+**Technical Notes:**
+- Backend: `SignalingGateway.handleRoomSettings()`
+- Event: `@SubscribeMessage('room:settings')`
+- Broadcast: `server.to(roomId).emit('room:settings-changed', ...)`
+- Validation: Check `room.hostId === userId`
+- Hook: `useRoomSettings()` listen to `room:settings-changed`
+
+**Status**: ✅ Implemented
+
+---
+
 
 ## Epic 6: Waiting Room
 
@@ -871,14 +1158,19 @@ const isValidUsername = (name: string) => {
 
 ## Summary
 
-**Total User Stories**: 40+  
+**Total User Stories**: 51+  
 **Epics**: 11  
 **Status**: 
-- ✅ Implemented: ~30 stories
+- ✅ Implemented: ~40 stories
 - 🚧 Partial: ~5 stories  
-- ⏳ Planned: ~10 stories
+- ⏳ Planned: ~6 stories
 
-**Implementation Progress**: ~75%
+**Implementation Progress**: ~78%
+
+**Recent Updates (2025-12-19)**:
+- Added 3 edge case stories for session persistence and host behavior (US-3.4 to 3.6)
+- Added 6 media-related stories for video quality, preferences, and device management (US-3.3.1 to 3.3.6)
+- Added 2 room settings stories for real-time sync and join before host (US-5.2.1, US-5.4.1)
 
 ---
 

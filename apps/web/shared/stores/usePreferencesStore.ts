@@ -16,6 +16,9 @@ interface PreferencesState {
   // Media settings
   videoQuality: 'auto' | '360p' | '720p' | '1080p';
   mirrorVideo: boolean;
+  
+  // Room admission tracking
+  admittedRooms: Record<string, { roomId: string; admittedAt: number }>;
 }
 
 interface PreferencesActions {
@@ -29,6 +32,11 @@ interface PreferencesActions {
   // Media settings actions
   setVideoQuality: (quality: 'auto' | '360p' | '720p' | '1080p') => void;
   setMirrorVideo: (enabled: boolean) => void;
+  
+  // Room admission actions
+  markRoomAsAdmitted: (roomId: string) => void;
+  isAdmittedToRoom: (roomId: string) => boolean;
+  clearAdmittedRoom: (roomId: string) => void;
   
   reset: () => void;
 }
@@ -47,11 +55,14 @@ const initialState: PreferencesState = {
   // Media settings defaults
   videoQuality: 'auto',
   mirrorVideo: true,
+  
+  // Room admission defaults
+  admittedRooms: {},
 };
 
 export const usePreferencesStore = create<PreferencesStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       // Initial state
       ...initialState,
 
@@ -66,6 +77,24 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // Media settings actions
       setVideoQuality: (quality) => set({ videoQuality: quality }),
       setMirrorVideo: (enabled) => set({ mirrorVideo: enabled }),
+      
+      // Room admission actions
+      markRoomAsAdmitted: (roomId) => set((state) => ({
+        admittedRooms: {
+          ...state.admittedRooms,
+          [roomId]: { roomId, admittedAt: Date.now() },
+        },
+      })),
+      
+      isAdmittedToRoom: (roomId) => {
+        const state = get();
+        return !!state.admittedRooms[roomId];
+      },
+      
+      clearAdmittedRoom: (roomId) => set((state) => {
+        const { [roomId]: _, ...rest } = state.admittedRooms;
+        return { admittedRooms: rest };
+      }),
       
       reset: () => set(initialState),
     }),

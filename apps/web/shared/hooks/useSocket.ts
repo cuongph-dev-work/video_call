@@ -44,7 +44,9 @@ function updateState(partial: Partial<SocketState>) {
 }
 
 function getSocketInstance(): Socket {
-  if (socketInstance) return socketInstance;
+  if (socketInstance) {
+    return socketInstance;
+  }
 
   const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:4000';
 

@@ -23,7 +23,10 @@ export function useScreenShare(socket: (() => Socket | null) | null) {
     // Notify other participants
     const socketInstance = socket?.();
     if (socketInstance) {
-      socketInstance.emit('screen-share-stop', { roomId });
+      socketInstance.emit('participant:state', { 
+        roomId, 
+        state: { isScreenSharing: false } 
+      });
     }
   }, [socket]);
 
@@ -43,9 +46,9 @@ export function useScreenShare(socket: (() => Socket | null) | null) {
       // Notify other participants
       const socketInstance = socket?.();
       if (socketInstance) {
-        socketInstance.emit('screen-share-start', {
+        socketInstance.emit('participant:state', {
           roomId,
-          displayName: 'Screen Share',
+          state: { isScreenSharing: true }
         });
       }
 

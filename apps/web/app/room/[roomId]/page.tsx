@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { useSocket } from '@/shared/hooks/useSocket';
 import { useLocalStream } from '@/domains/media/hooks/useLocalStream';
 import { usePeerConnection } from '@/shared/hooks/usePeerConnection';
 import { useScreenShare } from '@/domains/media/hooks/useScreenShare';
@@ -12,12 +11,12 @@ import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import { useChatStore } from '@/domains/chat/stores/useChatStore';
 import { usePreferencesStore } from '@/shared/stores/usePreferencesStore';
 import { useResponsive } from '@/shared/hooks/useResponsive';
+import { useSocket } from '@/shared/hooks/useSocket';
 
-// Hooks
+// New hooks
+import { useRoomStore, selectParticipantsList, selectRemoteStreamsList } from '@/domains/room/stores/useRoomStore';
+import { useRoomController } from '@/domains/room/hooks/useRoomController';
 import { useRoomAccess } from '@/domains/room/hooks/useRoomAccess';
-import { useRoomEvents } from '@/domains/room/hooks/useRoomEvents';
-import { useRemoteStreams } from '@/domains/room/hooks/useRemoteStreams';
-import { useParticipantSync } from '@/domains/room/hooks/useParticipantSync';
 
 // Types
 import { Participant } from '@/domains/room/types';
@@ -35,6 +34,7 @@ import { WaitingRoomScreen } from '@/domains/room/components/WaitingRoomScreen';
 import { ConnectionStatus } from '@/shared/components/ConnectionStatus';
 import { PasswordModal } from '@/shared/components/PasswordModal';
 import { RoomNotFoundModal } from '@/shared/components/RoomNotFoundModal';
+import { RejectionModal } from '@/shared/components/RejectionModal';
 import { MobileChat } from '@/domains/chat/components/MobileChat';
 
 const RoomSettingsModal = dynamic(
@@ -46,14 +46,13 @@ export default function RoomPage() {
     const params = useParams();
     const router = useRouter();
     const roomId = params.roomId as string;
-    const { isMobile } = useResponsive();
+    const { isMobile, isTablet } = useResponsive();
 
-    // Store
-    const { messages: storeMessages } = useChatStore();
-    const userId = usePreferencesStore(state => state.userId);
+    // User preferences
+    const userId = usePreferencesStore((state) => state.userId);
+    const displayName = usePreferencesStore((state) => state.displayName);
 
-    // Socket & Media
-    const { getSocket, isConnected, reconnect } = useSocket();
+    // Local media
     const {
         stream: localStream,
         audioEnabled,
@@ -63,130 +62,153 @@ export default function RoomPage() {
         selectedCamera,
         selectedSpeaker,
         error: streamError,
-        toggleAudio,
-        toggleVideo,
         stopStream,
         switchMicrophone,
         switchCamera,
         switchSpeaker,
+        toggleAudio,
+        toggleVideo,
     } = useLocalStream();
+
+    // Room state from centralized store (inline selectors to avoid infinite loop)
+    const isJoined = useRoomStore((state) => state.isJoined);
+    const isHost = useRoomStore((state) => state.isHost);
+    const participantsMap = useRoomStore((state) => state.participants);
+    const remoteStreamsMap = useRoomStore((state) => state.remoteStreams);
+    const waitingUsers = useRoomStore((state) => state.waitingUsers);
+    const isChatOpen = useRoomStore((state) => state.isChatOpen);
+    const isSettingsOpen = useRoomStore((state) => state.isSettingsOpen);
+    const showShortcutsHelp = useRoomStore((state) => state.showShortcutsHelp);
+    const toggleChat = useRoomStore((state) => state.toggleChat);
+    const toggleSettings = useRoomStore((state) => state.toggleSettings);
+    const toggleShortcutsHelp = useRoomStore((state) => state.toggleShortcutsHelp);
+
+    const { isConnected, reconnect, getSocket } = useSocket();
 
     const { isSharing, screenStream, startScreenShare, stopScreenShare } = useScreenShare(getSocket);
 
-    // UI State
-    const [isChatOpen, setIsChatOpen] = useState(false);
-    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-    const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+    // CRITICAL: Initialize controller FIRST so socket listeners are ready
+    // This must happen BEFORE useRoomAccess auto-joins, otherwise we miss events!
+    const controller = useRoomController(roomId, {
+        toggleAudio,
+        toggleVideo,
+        audioEnabled,
+        videoEnabled
+    });
 
-    // Custom Hooks
+    // Chat store
+    const messages = useChatStore((state) => state.messages);
+
+    //Access & routing (this may auto-join, so controller must be ready)
     const {
-        isJoined,
-        displayName,
         isCheckingHost,
         isInWaitingRoom,
-        isHost,
-        permissions,
         showRoomNotFound,
         showPasswordModal,
         passwordError,
         isValidatingPassword,
+        showRejectionModal,
+        rejectionMessage,
+        permissions,
         setShowPasswordModal,
+        setShowRejectionModal,
         handleJoin,
-        handlePasswordSubmit
+        handlePasswordSubmit,
     } = useRoomAccess(roomId);
-
-    const { remoteStreamsList } = useRemoteStreams();
-
-    const {
-        participants,
-        waitingUsers,
-        handleSendMessage,
-        handleAdmitUser,
-        handleRejectUser
-    } = useRoomEvents({
-        roomId,
-        isJoined,
-        displayName,
-        userId: userId || '',
-        isMobile,
-        isChatOpen,
-        audioEnabled,
-        videoEnabled,
-    });
 
     // Peer Connection
     usePeerConnection({
         localStream: isSharing ? screenStream : localStream,
         socket: getSocket(),
         roomId,
+        userId,
     });
 
-    // Recording - use combined stream (screen share or local)
+    // Recording
     const recordingStream = isSharing ? screenStream : localStream;
-    const {
-        isRecording,
-        startRecording,
-        stopRecording,
-        formatDuration,
-    } = useMediaRecorder(recordingStream);
+    const { isRecording, startRecording, stopRecording, formatDuration } =
+        useMediaRecorder(recordingStream);
 
-    // Participant sync - emit state changes to other participants
-    const { updateAudio, updateVideo, updateScreenShare } = useParticipantSync({
-        roomId,
-        isJoined,
-        onStateChanged: (userId, state) => {
-            // State changes are handled by useRoomEvents
-            console.log('Participant state changed:', userId, state);
-        },
-    });
+    // Convert Maps to arrays (memoized to avoid recreating)
+    const participants = useMemo(
+        () => Array.from(participantsMap.values()),
+        [participantsMap]
+    );
 
-    // Event handlers wrapping socket emissions (UI actions)
-    const handleToggleAudio = useCallback(() => {
-        toggleAudio();
-        updateAudio(!audioEnabled);
-    }, [toggleAudio, updateAudio, audioEnabled]);
+    const remoteStreamsList = useMemo(() => {
+        return Array.from(remoteStreamsMap.entries()).map(([id, stream]) => ({ id, stream }));
+    }, [remoteStreamsMap]);
 
-    const handleToggleVideo = useCallback(() => {
-        toggleVideo();
-        updateVideo(!videoEnabled);
-    }, [toggleVideo, updateVideo, videoEnabled]);
+    const hasJoinedRef = useRef(false);
+    const controllerRef = useRef(controller);
+    controllerRef.current = controller; // Always keep ref updated
 
+    useEffect(() => {
+        if (isJoined && userId && displayName && controller.isManagerReady && !hasJoinedRef.current) {
+            hasJoinedRef.current = true;
+            controllerRef.current.joinRoom();
+        }
+    }, [isJoined, userId, displayName, controller.isManagerReady]);
+
+    // Listen to remote stream events from WebRTC peer connections
+    const addRemoteStream = useRoomStore((state) => state.addRemoteStream);
+    const removeRemoteStream = useRoomStore((state) => state.removeRemoteStream);
+
+    useEffect(() => {
+        const handleRemoteStreamAdded = (event: Event) => {
+            const customEvent = event as CustomEvent<{ peerId: string; stream: MediaStream }>;
+            const { peerId, stream } = customEvent.detail;
+            addRemoteStream(peerId, stream);
+        };
+
+        const handleRemoteStreamRemoved = (event: Event) => {
+            const customEvent = event as CustomEvent<{ peerId: string }>;
+            const { peerId } = customEvent.detail;
+            removeRemoteStream(peerId);
+        };
+
+        window.addEventListener('remote-stream-added', handleRemoteStreamAdded);
+        window.addEventListener('remote-stream-removed', handleRemoteStreamRemoved);
+
+        return () => {
+            window.removeEventListener('remote-stream-added', handleRemoteStreamAdded);
+            window.removeEventListener('remote-stream-removed', handleRemoteStreamRemoved);
+        };
+    }, [addRemoteStream, removeRemoteStream]);
+
+    // Event handlers
     const handleToggleScreenShare = useCallback(async () => {
         if (isSharing) {
             stopScreenShare(roomId);
-            updateScreenShare(false);
+            controller.updateScreenShare(false);
         } else {
             await startScreenShare(roomId);
-            updateScreenShare(true);
+            controller.updateScreenShare(true);
         }
-    }, [isSharing, stopScreenShare, roomId, startScreenShare, updateScreenShare]);
+    }, [isSharing, stopScreenShare, roomId, startScreenShare, controller]);
 
     const handleEndCall = useCallback(() => {
-        const socket = getSocket();
-        if (socket && isJoined) {
-            socket.emit('leave-room', { roomId });
-        }
+        controller.leaveRoom();
         stopStream();
         if (isSharing) {
             stopScreenShare(roomId);
         }
         router.push('/');
-    }, [getSocket, roomId, stopStream, isSharing, stopScreenShare, router, isJoined]);
+    }, [controller, stopStream, isSharing, stopScreenShare, roomId, router]);
 
     // Keyboard Shortcuts
     useKeyboardShortcuts({
-        onToggleMic: handleToggleAudio,
-        onToggleVideo: handleToggleVideo,
+        onToggleMic: controller.toggleAudio,
+        onToggleVideo: controller.toggleVideo,
         onToggleScreenShare: handleToggleScreenShare,
         onToggleRecording: isRecording ? stopRecording : startRecording,
         onEndCall: handleEndCall,
-        onShowHelp: () => setShowShortcutsHelp(prev => !prev),
+        onShowHelp: toggleShortcutsHelp,
         enabled: isJoined,
     });
 
-    // Prepare participants data for components (deduplicate)
+    // Participants for sidebar (include local user)
     const participantsForSidebar: Participant[] = useMemo(() => {
-        // Use userId from store for deduplication (backend uses userId, not socket.id)
         const localParticipant: Participant = {
             id: userId || 'local',
             displayName: displayName + ' (You)',
@@ -194,20 +216,18 @@ export default function RoomPage() {
             videoEnabled,
         };
 
-        // Filter out self (by userId) and duplicates
+        // Filter out self and deduplicate
         const uniqueRemote = participants.filter(
-            (p, index, self) =>
-                p.id !== userId &&
-                self.findIndex(x => x.id === p.id) === index
+            (p, index, self) => p.id !== userId && self.findIndex((x) => x.id === p.id) === index
         );
 
         return [localParticipant, ...uniqueRemote];
     }, [userId, displayName, audioEnabled, videoEnabled, participants]);
 
-    // Prepare video participants (only first 4 for thumbnails)
+    // Video participants for grid (first 4)
     const videoParticipants = useMemo(() => {
         return remoteStreamsList.slice(0, 4).map(({ id, stream }) => {
-            const participant = participants.find(p => p.id === id);
+            const participant = participants.find((p) => p.id === id);
             return {
                 id,
                 stream,
@@ -218,15 +238,65 @@ export default function RoomPage() {
         });
     }, [remoteStreamsList, participants]);
 
-    // Mock meeting info
-    const meetingInfo = useMemo(() => ({
-        title: '[Internal] Weekly Meeting',
-        date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-    }), []);
+    // Cleanup waiting room on unmount
+    useEffect(() => {
+        return () => {
+            if (isInWaitingRoom) {
+                const socket = getSocket();
+                if (socket?.connected) {
+                    socket.emit('leave-waiting-room', { roomId });
+                }
+            }
+        };
+    }, [isInWaitingRoom, roomId, getSocket]);
+
+    // Real-time clock for meeting info
+    const [currentTime, setCurrentTime] = useState(new Date());
+    const [roomName, setRoomName] = useState<string>('Meeting Room');
+
+    // Fetch room name
+    useEffect(() => {
+        const fetchRoomName = async () => {
+            try {
+                const roomApi = await import('@/shared/api/room-api').then(m => m.roomApi);
+                const settings = await roomApi.getSettings(roomId);
+                if (settings.settings?.roomName) {
+                    setRoomName(settings.settings.roomName);
+                }
+            } catch {
+                // Keep default name
+            }
+        };
+
+        if (isJoined) {
+            void fetchRoomName();
+        }
+    }, [roomId, isJoined]);
+
+    // Update time every minute
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setCurrentTime(new Date());
+        }, 60000); // Update every minute
+
+        return () => clearInterval(timer);
+    }, []);
+
+    // Meeting info with real-time data
+    const meetingInfo = useMemo(
+        () => ({
+            title: roomName,
+            date: currentTime.toLocaleDateString('en-US', {
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+            }),
+            time: currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        }),
+        [roomName, currentTime]
+    );
 
     // Render logic
-    // Show room not found modal immediately
     if (showRoomNotFound) {
         return <RoomNotFoundModal isOpen={showRoomNotFound} />;
     }
@@ -243,7 +313,14 @@ export default function RoomPage() {
     }
 
     if (isInWaitingRoom) {
-        return <WaitingRoomScreen roomId={roomId} displayName={displayName} onLeave={() => router.push('/')} />;
+        const handleLeaveWaiting = () => {
+            const socket = getSocket();
+            if (socket?.connected) {
+                socket.emit('leave-waiting-room', { roomId });
+            }
+            router.push('/');
+        };
+        return <WaitingRoomScreen roomId={roomId} displayName={displayName} onLeave={handleLeaveWaiting} />;
     }
 
     if (!isJoined) {
@@ -259,8 +336,8 @@ export default function RoomPage() {
                 selectedCamera={selectedCamera}
                 selectedSpeaker={selectedSpeaker}
                 streamError={streamError}
-                toggleAudio={toggleAudio}
-                toggleVideo={toggleVideo}
+                toggleAudio={controller.toggleAudio}
+                toggleVideo={controller.toggleVideo}
                 switchMicrophone={switchMicrophone}
                 switchCamera={switchCamera}
                 switchSpeaker={switchSpeaker}
@@ -280,23 +357,19 @@ export default function RoomPage() {
                     displayName,
                     role: 'Host',
                 }}
-                onOpenSettings={() => setIsSettingsModalOpen(true)}
-                onShowHelp={() => setShowShortcutsHelp(true)}
+                onOpenSettings={toggleSettings}
+                onShowHelp={toggleShortcutsHelp}
             />
 
             {/* Recording Indicator */}
-            {isRecording && (
-                <RecordingIndicator
-                    formatDuration={formatDuration}
-                />
-            )}
+            {isRecording && <RecordingIndicator formatDuration={formatDuration} />}
 
             {/* Waiting Users Notification */}
             {waitingUsers.length > 0 && (
                 <WaitingUsersNotification
                     waitingUsers={waitingUsers}
-                    onAdmit={handleAdmitUser}
-                    onReject={handleRejectUser}
+                    onAdmit={controller.admitUser}
+                    onReject={controller.rejectUser}
                 />
             )}
 
@@ -305,8 +378,10 @@ export default function RoomPage() {
                     <VideoSection
                         mainSpeaker={{
                             stream: isSharing
-                                ? screenStream || undefined
-                                : (videoEnabled ? localStream : undefined) || undefined,
+                                ? (screenStream ?? undefined)
+                                : videoEnabled
+                                    ? (localStream ?? undefined)
+                                    : undefined,
                             displayName: displayName + (isSharing ? ' (Screen)' : ''),
                             audioEnabled,
                         }}
@@ -321,53 +396,30 @@ export default function RoomPage() {
                         screenSharing={isSharing}
                         isHost={isHost}
                         permissions={permissions}
-                        onToggleAudio={handleToggleAudio}
-                        onToggleVideo={handleToggleVideo}
+                        onToggleAudio={controller.toggleAudio}
+                        onToggleVideo={controller.toggleVideo}
                         onToggleScreenShare={handleToggleScreenShare}
-                        onToggleChat={isMobile ? () => setIsChatOpen(prev => !prev) : undefined}
+                        onToggleChat={isMobile ? toggleChat : undefined}
                         onEndCall={handleEndCall}
                     />
                 </div>
 
-                <Sidebar
-                    participants={participantsForSidebar}
-                    messages={storeMessages}
-                    onSendMessage={handleSendMessage}
-                />
+                <Sidebar participants={participantsForSidebar} messages={messages} onSendMessage={controller.sendMessage} />
             </main>
 
             {/* Mobile Chat */}
-            <MobileChat
-                isOpen={isChatOpen}
-                onClose={() => setIsChatOpen(false)}
-                messages={storeMessages}
-                onSendMessage={handleSendMessage}
-            />
+            <MobileChat isOpen={isChatOpen} onClose={toggleChat} messages={messages} onSendMessage={controller.sendMessage} />
 
             {/* Room Settings Modal */}
-            {isSettingsModalOpen && (
-                <RoomSettingsModal
-                    isOpen={isSettingsModalOpen}
-                    onClose={() => setIsSettingsModalOpen(false)}
-                    roomId={roomId}
-                    isHost={isHost}
-                    isJoined={isJoined}
-                />
+            {isSettingsOpen && (
+                <RoomSettingsModal isOpen={isSettingsOpen} onClose={toggleSettings} roomId={roomId} isHost={isHost} isJoined={isJoined} />
             )}
 
             {/* Keyboard Shortcuts Help */}
-            {showShortcutsHelp && (
-                <KeyboardShortcutsHelp
-                    isOpen={showShortcutsHelp}
-                    onClose={() => setShowShortcutsHelp(false)}
-                />
-            )}
+            {showShortcutsHelp && <KeyboardShortcutsHelp isOpen={showShortcutsHelp} onClose={toggleShortcutsHelp} />}
 
             {/* Connection Status Indicator */}
-            <ConnectionStatus
-                isConnected={isConnected}
-                onRetry={reconnect}
-            />
+            <ConnectionStatus isConnected={isConnected} onRetry={reconnect} />
 
             {/* Password Modal */}
             <PasswordModal
@@ -377,6 +429,9 @@ export default function RoomPage() {
                 error={passwordError}
                 isValidating={isValidatingPassword}
             />
+
+            {/* Rejection Modal */}
+            <RejectionModal isOpen={showRejectionModal} message={rejectionMessage} onClose={() => setShowRejectionModal(false)} />
         </div>
     );
 }

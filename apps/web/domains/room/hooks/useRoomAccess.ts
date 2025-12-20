@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { roomApi, RoomPermissions } from '@/shared/api/room-api';
 import { usePreferencesStore } from '@/shared/stores/usePreferencesStore';
 import { useSocket } from '@/shared/hooks/useSocket';
+import { useRoomStore } from '../stores/useRoomStore';
 
 const DEFAULT_PERMISSIONS: RoomPermissions = {
     allowChat: true,
@@ -31,6 +32,10 @@ export function useRoomAccess(roomId: string) {
     const [passwordError, setPasswordError] = useState<string | undefined>();
     const [isValidatingPassword, setIsValidatingPassword] = useState(false);
     
+    // Rejection Modal State
+    const [showRejectionModal, setShowRejectionModal] = useState(false);
+    const [rejectionMessage, setRejectionMessage] = useState('');
+    
     // Track if auto-join check has been performed to prevent flickering
     const hasCheckedHostRef = useRef(false);
     // Track if a check is currently in progress
@@ -38,6 +43,8 @@ export function useRoomAccess(roomId: string) {
 
     const userId = usePreferencesStore(state => state.userId);
     const storedDisplayName = usePreferencesStore(state => state.displayName);
+    const isAdmittedToRoom = usePreferencesStore(state => state.isAdmittedToRoom);
+    const markRoomAsAdmitted = usePreferencesStore(state => state.markRoomAsAdmitted);
 
     // Auto-join for room host
     useEffect(() => {
@@ -67,9 +74,23 @@ export function useRoomAccess(roomId: string) {
                     setPermissions(roomInfo.settings.permissions);
                 }
 
-                if (roomInfo.isHost) {
+                // Auto-join if user is host OR previously admitted to this room
+                const isAdmitted = isAdmittedToRoom(roomId);
+                
+                if (roomInfo.isHost || isAdmitted) {
                     setDisplayName(storedDisplayName || '');
                     setIsJoined(true);
+                    
+                    // IMPORTANT: Sync with global room store
+                    useRoomStore.getState().setJoined(true);
+                    useRoomStore.getState().setHost(roomInfo.isHost);
+                    useRoomStore.getState().setRoomId(roomId);
+                    
+                    if (isAdmitted) {
+                        console.log(`✅ Auto-joining room ${roomId} - user was previously admitted`);
+                    } else {
+                        console.log(`✅ Auto-joining room ${roomId} - user is host`);
+                    }
                 }
             } catch (error) {
                 // Check if it's a 404 error (room not found)
@@ -86,7 +107,7 @@ export function useRoomAccess(roomId: string) {
         };
 
         checkAndAutoJoin();
-    }, [roomId, userId, storedDisplayName, isJoined]);
+    }, [roomId, userId, storedDisplayName, isJoined, isAdmittedToRoom]);
 
     // Proceed to join room (internal)
     const proceedToJoin = (waitingRoomEnabled: boolean, nameOverride: string) => {
@@ -102,6 +123,9 @@ export function useRoomAccess(roomId: string) {
             }
         } else {
             setIsJoined(true);
+            // Sync with global store
+            useRoomStore.getState().setJoined(true);
+            useRoomStore.getState().setRoomId(roomId);
         }
     };
 
@@ -159,14 +183,21 @@ export function useRoomAccess(roomId: string) {
         const socket = getSocket();
         if (socket && isInWaitingRoom) {
             const handleAdmitted = () => {
+                console.log(`🎉 User admitted to room ${roomId}, saving admission status`);
+                markRoomAsAdmitted(roomId);
                 setIsInWaitingRoom(false);
                 setIsJoined(true);
+                // Sync with global store
+                useRoomStore.getState().setJoined(true);
+                useRoomStore.getState().setRoomId(roomId);
             };
 
             const handleRejected = (data: { message: string }) => {
-                alert(data.message || 'You were denied access to the room.');
+                console.log('❌ User rejected from room:', data);
                 setIsInWaitingRoom(false);
-                router.push('/');
+                setShowRejectionModal(true);
+                setRejectionMessage(data.message || 'Bạn đã bị từ chối tham gia phòng họp này.');
+                // Note: RejectionModal handles auto-redirect after 3s
             };
 
             socket.on('admitted', handleAdmitted);
@@ -177,7 +208,7 @@ export function useRoomAccess(roomId: string) {
                 socket.off('rejected', handleRejected);
             };
         }
-    }, [getSocket, isInWaitingRoom, router]);
+    }, [getSocket, isInWaitingRoom, router, markRoomAsAdmitted, roomId]);
 
     return {
         isJoined,
@@ -190,7 +221,10 @@ export function useRoomAccess(roomId: string) {
         showPasswordModal,
         passwordError,
         isValidatingPassword,
+        showRejectionModal,
+        rejectionMessage,
         setShowPasswordModal,
+        setShowRejectionModal,
         handleJoin,
         handlePasswordSubmit,
     };

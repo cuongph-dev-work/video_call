@@ -9,6 +9,8 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
+import { InjectRedis } from '@nestjs-modules/ioredis';
+import { Redis } from 'ioredis';
 import { RoomsService } from '../rooms/rooms.service';
 import { WaitingRoomService } from '../rooms/waiting-room.service';
 import { RoomSettingsService } from '../rooms/room-settings.service';
@@ -45,65 +47,109 @@ export class SignalingGateway
     private readonly roomsService: RoomsService,
     private readonly waitingRoomService: WaitingRoomService,
     private readonly roomSettingsService: RoomSettingsService,
+    @InjectRedis() private readonly redis: Redis,
   ) {}
 
+  // ============================================
+  // HELPER METHODS
+  // ============================================
+
+  /**
+   * Get userId from socket, with fallback to socket.id
+   */
+  private getUserId(client: Socket): string {
+    return this.socketIdToUserId.get(client.id) || client.id;
+  }
+
+  /**
+   * Notify room about waiting queue updates
+   */
+  private async notifyWaitingRoomUpdate(roomId: string): Promise<void> {
+    const waitingCount = await this.waitingRoomService.getWaitingCount(roomId);
+    this.server.to(roomId).emit('waiting-count-updated', { waitingCount });
+
+    const waitingUsers = await this.waitingRoomService.getWaitingUsers(roomId);
+    this.server.to(roomId).emit('waiting-users-list', { roomId, users: waitingUsers });
+  }
+
+  /**
+   * Disconnect old socket for same userId (handles F5 refresh)
+   */
+  private disconnectOldSocket(userId: string, currentSocketId: string): void {
+    const existingSocketId = Array.from(this.socketIdToUserId.entries())
+      .find(([socketId, uid]) => uid === userId && socketId !== currentSocketId)?.[0];
+    
+    if (existingSocketId) {
+      this.socketIdToUserId.delete(existingSocketId);
+      const oldSocket = this.server.sockets.sockets.get(existingSocketId);
+      if (oldSocket) {
+        oldSocket.disconnect(true);
+      }
+    }
+  }
+
+  /**
+   * Centralized error handling
+   */
+  private handleError(client: Socket, error: unknown, context: string): void {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    this.logger.error(`${context}:`, error);
+    client.emit('error', { code: message, message: `Failed to ${context}` });
+  }
+
+  // ============================================
+  // CONNECTION LIFECYCLE
+  // ============================================
+
   handleConnection(client: Socket) {
-    this.logger.log(`Client connected: ${client.id}`);
+    // Connection established
   }
 
   async handleDisconnect(client: Socket) {
-    this.logger.log(`Client disconnected: ${client.id}`);
-
-    const userId = this.socketIdToUserId.get(client.id);
-    if (userId) {
-      // Clean up user from any rooms they were in
+    const userId = this.getUserId(client);
+    
+    if (!this.socketIdToUserId.has(client.id)) {
       await this.roomsService.handleDisconnect(userId);
-      this.socketIdToUserId.delete(client.id);
+      return;
+    }
 
-      // Check if user was in any waiting queue and remove them
-      // Note: We need to check all rooms because we don't track which room they were waiting for
-      // In production, you might want to track this mapping
-      try {
-        // Get all room keys from Redis to check waiting queues
-        const allRooms = await this.redis.keys('room:*:waiting');
+    // Get the rooms this user is in before cleaning up
+    const roomIds = await this.redis.smembers(`user:${userId}:rooms`);
+
+    // Notify rooms about user leaving
+    for (const roomId of roomIds) {
+      const participants = await this.roomsService.getParticipants(roomId);
+      const disconnectedUser = participants.find((p) => p.id === userId);
+      const wasHost = disconnectedUser?.isHost || false;
+
+      this.server.to(roomId).emit('user-left', { userId, wasHost });
+    }
+
+    // Clean up user from rooms and mappings
+    await this.roomsService.handleDisconnect(userId);
+    this.socketIdToUserId.delete(client.id);
+
+    // Clean up from waiting queues
+    try {
+      const allRooms = await this.redis.keys('room:*:waiting');
+
+      for (const key of allRooms) {
+        const roomId = key.split(':')[1];
+        const isWaiting = await this.waitingRoomService.isUserWaiting(roomId, userId);
         
-        for (const key of allRooms) {
-          // Extract roomId from key format: room:{roomId}:waiting
-          const roomId = key.split(':')[1];
-          
-          const isWaiting = await this.waitingRoomService.isUserWaiting(roomId, userId);
-          if (isWaiting) {
-            // Remove from waiting queue
-            await this.waitingRoomService.removeFromWaitingQueue(roomId, userId);
-            
-            // Update waiting count for host
-            const waitingCount = await this.waitingRoomService.getWaitingCount(roomId);
-            this.server.to(roomId).emit('waiting-count-updated', {
-              waitingCount,
-            });
-            
-            // Emit updated waiting users list to host
-            const waitingUsers = await this.waitingRoomService.getWaitingUsers(roomId);
-            this.server.to(roomId).emit('waiting-users-list', {
-              roomId,
-              users: waitingUsers,
-            });
-            
-            this.logger.log(`Removed disconnected user ${userId} from waiting queue of room ${roomId}`);
-          }
+        if (isWaiting) {
+          await this.waitingRoomService.removeFromWaitingQueue(roomId, userId);
+          await this.notifyWaitingRoomUpdate(roomId);
         }
-      } catch (error) {
-        this.logger.error(`Error cleaning up waiting user ${userId}:`, error);
       }
-
-      // We don't have roomId here, so we can't emit user-left easily to a specific room
-      // However, handleDisconnect in roomsService should handle the cleanup.
-      // We might need to track which room the user was in if we want to emit user-left.
-    } else {
-      // Fallback to client.id for legacy or if userId not found
-      await this.roomsService.handleDisconnect(client.id);
+    } catch (error) {
+      this.logger.error(`Error cleaning up waiting user ${userId}:`, error);
     }
   }
+
+  // ============================================
+  // ROOM MANAGEMENT
+  // ============================================
 
   @SubscribeMessage('join-room')
   async handleJoinRoom(
@@ -116,7 +162,7 @@ export class SignalingGateway
       password?: string;
       audioEnabled?: boolean;
       videoEnabled?: boolean;
-    },
+    }
   ) {
     try {
       const { roomId, userId, displayName, password, audioEnabled = true, videoEnabled = true } = data;
@@ -141,60 +187,65 @@ export class SignalingGateway
 
       // Join the room
       const participants = await this.roomsService.joinRoom(roomId, userId, displayName);
-
+      
+      // Handle F5 refresh: disconnect old socket with same userId
+      this.disconnectOldSocket(userId, client.id);
+      
       // Store socket ID to user ID mapping
       this.socketIdToUserId.set(client.id, userId);
 
-      // Join Socket.IO room for this meeting
-      void client.join(roomId);
-      // Join individual room for this user (to receive private messages)
-      void client.join(userId);
-
+      // Join Socket.IO rooms
+      await client.join(roomId);
+      await client.join(userId);
+      
       // Notify the user they've joined
       client.emit('room-joined', { roomId, participants });
 
-      // Notify others in the room with actual device status
-      client.to(roomId).emit('user-joined', {
-        participant: {
-          id: userId,
-          displayName,
-          audioEnabled,
-          videoEnabled,
-          isHost: participants.find((p) => p.id === userId)?.isHost || false,
-        },
-      });
-
-      this.logger.log(`${displayName} joined room ${roomId}`);
+      // Notify others in the room
+      const newParticipant = {
+        id: userId,
+        displayName,
+        audioEnabled,
+        videoEnabled,
+        isHost: participants.find((p) => p.id === userId)?.isHost || false,
+      };
+      
+      client.to(roomId).emit('user-joined', { participant: newParticipant });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      client.emit('error', { code: message, message: 'Failed to join room' });
+      this.handleError(client, error, 'join room');
     }
   }
 
   @SubscribeMessage('leave-room')
   async handleLeaveRoom(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomId: string },
+    @MessageBody() data: { roomId: string }
   ) {
     const { roomId } = data;
-    const userId = this.socketIdToUserId.get(client.id) || client.id;
+    const userId = this.getUserId(client);
+
+    // Check if leaving user is host
+    const participants = await this.roomsService.getParticipants(roomId);
+    const leavingParticipant = participants.find((p) => p.id === userId);
+    const wasHost = leavingParticipant?.isHost || false;
+
+    // Notify others before leaving
+    client.to(roomId).emit('user-left', { userId, wasHost });
 
     await this.roomsService.leaveRoom(roomId, userId);
     void client.leave(roomId);
-
-    // Notify others
-    client.to(roomId).emit('user-left', { userId });
-
-    this.logger.log(`User ${userId} left room ${roomId}`);
   }
+
+  // ============================================
+  // WEBRTC SIGNALING
+  // ============================================
 
   @SubscribeMessage('offer')
   handleOffer(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { to: string; offer: RTCSessionDescriptionInit },
+    @MessageBody() data: { to: string; offer: RTCSessionDescriptionInit }
   ) {
-    const fromUserId = this.socketIdToUserId.get(client.id) || client.id;
-    this.logger.log(`Forwarding offer from ${fromUserId} to ${data.to}`);
+    const fromUserId = this.getUserId(client);
     this.server.to(data.to).emit('offer', {
       from: fromUserId,
       offer: data.offer,
@@ -204,10 +255,9 @@ export class SignalingGateway
   @SubscribeMessage('answer')
   handleAnswer(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { to: string; answer: RTCSessionDescriptionInit },
+    @MessageBody() data: { to: string; answer: RTCSessionDescriptionInit }
   ) {
-    const fromUserId = this.socketIdToUserId.get(client.id) || client.id;
-    this.logger.log(`Forwarding answer from ${fromUserId} to ${data.to}`);
+    const fromUserId = this.getUserId(client);
     this.server.to(data.to).emit('answer', {
       from: fromUserId,
       answer: data.answer,
@@ -217,65 +267,42 @@ export class SignalingGateway
   @SubscribeMessage('ice-candidate')
   handleIceCandidate(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { to: string; candidate: RTCIceCandidateInit },
+    @MessageBody() data: { to: string; candidate: RTCIceCandidateInit }
   ) {
-    const fromUserId = this.socketIdToUserId.get(client.id) || client.id;
+    const fromUserId = this.getUserId(client);
     this.server.to(data.to).emit('ice-candidate', {
       from: fromUserId,
       candidate: data.candidate,
     });
   }
 
-  @SubscribeMessage('toggle-audio')
-  handleToggleAudio(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomId: string; enabled: boolean },
-  ) {
-    const { roomId, enabled } = data;
-    const userId = this.socketIdToUserId.get(client.id) || client.id;
-    client.to(roomId).emit('participant-audio-changed', {
-      userId,
-      enabled,
-    });
-  }
+  //============================================
+  // PARTICIPANT STATE MANAGEMENT
+  // ============================================
 
-  @SubscribeMessage('toggle-video')
-  handleToggleVideo(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomId: string; enabled: boolean },
-  ) {
-    const { roomId, enabled } = data;
-    const userId = this.socketIdToUserId.get(client.id) || client.id;
-    client.to(roomId).emit('participant-video-changed', {
-      userId,
-      enabled,
-    });
-  }
-
+  // TODO: Screen share functionality - temporarily disabled to focus on multi p2p
+  // Uncomment when ready to implement
+  /*
   @SubscribeMessage('screen-share-start')
   handleScreenShareStart(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomId: string; displayName: string },
+    @MessageBody() data: { roomId: string; displayName: string }
   ) {
     const { roomId, displayName } = data;
-    const userId = this.socketIdToUserId.get(client.id) || client.id;
-    client.to(roomId).emit('screen-share-started', {
-      userId,
-      displayName,
-    });
+    const userId = this.getUserId(client);
+    client.to(roomId).emit('screen-share-started', { userId, displayName });
   }
 
   @SubscribeMessage('screen-share-stop')
   handleScreenShareStop(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomId: string },
+    @MessageBody() data: { roomId: string }
   ) {
     const { roomId } = data;
-    const userId = this.socketIdToUserId.get(client.id) || client.id;
-    client.to(roomId).emit('screen-share-stopped', {
-      userId,
-    });
+    const userId = this.getUserId(client);
+    client.to(roomId).emit('screen-share-stopped', { userId });
   }
+  */
 
   @SubscribeMessage('chat-message')
   async handleChatMessage(
@@ -286,10 +313,9 @@ export class SignalingGateway
       content: string;
       isPrivate: boolean;
       recipientId?: string;
-    },
+    }
   ) {
-    const userId = this.socketIdToUserId.get(client.id) || client.id;
-    // Get participant info from room
+    const userId = this.getUserId(client);
     const participants = await this.roomsService.getParticipants(data.roomId);
     const sender = participants.find((p) => p.id === userId);
 
@@ -360,13 +386,9 @@ export class SignalingGateway
         waitingCount,
       });
 
-      this.logger.log(`${displayName} joined waiting room for ${roomId}`);
+      this.logger.debug(`${displayName} joined waiting room for ${roomId}`);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      client.emit('error', {
-        code: message,
-        message: 'Failed to join waiting room',
-      });
+      this.handleError(client, error, 'join waiting room');
     }
   }
 
@@ -397,20 +419,12 @@ export class SignalingGateway
         message: 'You have been admitted to the room',
       });
 
-      // Update waiting count for host
-      const waitingCount =
-        await this.waitingRoomService.getWaitingCount(roomId);
-      this.server.to(roomId).emit('waiting-count-updated', {
-        waitingCount,
-      });
+      // Update waiting count
+      await this.notifyWaitingRoomUpdate(roomId);
 
-      this.logger.log(`User ${userId} admitted to room ${roomId}`);
+      this.logger.debug(`User ${userId} admitted to room ${roomId}`);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      client.emit('error', {
-        code: message,
-        message: 'Failed to admit user',
-      });
+      this.handleError(client, error, 'admit user');
     }
   }
 
@@ -441,20 +455,12 @@ export class SignalingGateway
         message: reason || 'You were not admitted to this room',
       });
 
-      // Update waiting count for host
-      const waitingCount =
-        await this.waitingRoomService.getWaitingCount(roomId);
-      this.server.to(roomId).emit('waiting-count-updated', {
-        waitingCount,
-      });
+      // Update waiting count
+      await this.notifyWaitingRoomUpdate(roomId);
 
-      this.logger.log(`User ${userId} rejected from room ${roomId}`);
+      this.logger.debug(`User ${userId} rejected from room ${roomId}`);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      client.emit('error', {
-        code: message,
-        message: 'Failed to reject user',
-      });
+      this.handleError(client, error, 'reject user');
     }
   }
 
@@ -465,24 +471,39 @@ export class SignalingGateway
   ) {
     try {
       const { roomId } = data;
-      const waitingUsers =
-        await this.waitingRoomService.getWaitingUsers(roomId);
-
-      client.emit('waiting-users-list', {
-        roomId,
-        users: waitingUsers,
-      });
+      const waitingUsers = await this.waitingRoomService.getWaitingUsers(roomId);
+      client.emit('waiting-users-list', { roomId, users: waitingUsers });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      client.emit('error', {
-        code: message,
-        message: 'Failed to get waiting users',
-      });
+      this.handleError(client, error, 'get waiting users');
+    }
+  }
+
+  @SubscribeMessage('leave-waiting-room')
+  async handleLeaveWaitingRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { roomId: string }
+  ) {
+    try {
+      const { roomId } = data;
+      const userId = this.getUserId(client);
+
+      const isWaiting = await this.waitingRoomService.isUserWaiting(roomId, userId);
+      if (!isWaiting) {
+        return; // User not in waiting queue, nothing to do
+      }
+
+      await this.waitingRoomService.removeFromWaitingQueue(roomId, userId);
+      await this.notifyWaitingRoomUpdate(roomId);
+
+      this.logger.debug(`User ${userId} left waiting queue of room ${roomId}`);
+      client.emit('left-waiting-room', { roomId });
+    } catch (error: unknown) {
+      this.handleError(client, error, 'leave waiting room');
     }
   }
 
   // =============================================================================
-  // Unified Events (New Extensible Design)
+  // UNIFIED EVENTS
   // =============================================================================
 
   /**
@@ -503,12 +524,10 @@ export class SignalingGateway
         handRaised?: boolean;
         displayName?: string;
       };
-    },
+    }
   ) {
     const { roomId, state } = data;
-    const userId = this.socketIdToUserId.get(client.id) || client.id;
-
-    this.logger.debug(`Participant ${userId} state change in room ${roomId}:`, state);
+    const userId = this.getUserId(client);
 
     // Broadcast to all other participants in the room
     client.to(roomId).emit('participant:state-changed', {
@@ -516,20 +535,6 @@ export class SignalingGateway
       state,
       timestamp: Date.now(),
     });
-
-    // Also emit legacy events for backward compatibility
-    if (state.audioEnabled !== undefined) {
-      client.to(roomId).emit('participant-audio-changed', {
-        userId,
-        enabled: state.audioEnabled,
-      });
-    }
-    if (state.videoEnabled !== undefined) {
-      client.to(roomId).emit('participant-video-changed', {
-        userId,
-        enabled: state.videoEnabled,
-      });
-    }
   }
 
   /**
@@ -554,10 +559,10 @@ export class SignalingGateway
         password?: string;
         roomName?: string;
       };
-    },
+    }
   ) {
     const { roomId, settings } = data;
-    const userId = this.socketIdToUserId.get(client.id) || client.id;
+    const userId = this.getUserId(client);
 
     try {
       // Verify user is host
@@ -588,14 +593,8 @@ export class SignalingGateway
         changedBy: userId,
         timestamp: Date.now(),
       });
-
-      this.logger.log(`Room ${roomId} settings updated by host ${userId}`);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      client.emit('error', {
-        code: message,
-        message: 'Failed to update room settings',
-      });
+      this.handleError(client, error, 'update room settings');
     }
   }
 
@@ -605,25 +604,18 @@ export class SignalingGateway
   @SubscribeMessage('room:get-settings')
   async handleGetRoomSettings(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomId: string },
+    @MessageBody() data: { roomId: string }
   ) {
     try {
       const { roomId } = data;
       const settings = await this.roomSettingsService.getSettings(roomId);
-      
-      // Get public settings (without password)
       const publicSettings = await this.roomSettingsService.getPublicSettings(roomId);
 
       client.emit('room:settings-sync', {
         settings: publicSettings || settings,
       });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      client.emit('error', {
-        code: message,
-        message: 'Failed to get room settings',
-      });
+      this.handleError(client, error, 'get room settings');
     }
   }
 }
-
