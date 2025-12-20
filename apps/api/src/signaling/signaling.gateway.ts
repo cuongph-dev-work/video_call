@@ -116,6 +116,12 @@ export class SignalingGateway
     // Get the rooms this user is in before cleaning up
     const roomIds = await this.redis.smembers(`user:${userId}:rooms`);
 
+    // Clean up session tracking
+    for (const roomId of roomIds) {
+      const sessionKey = `room:${roomId}:user:${userId}:sessions`;
+      await this.redis.srem(sessionKey, client.id);
+    }
+
     // Notify rooms about user leaving
     for (const roomId of roomIds) {
       const participants = await this.roomsService.getParticipants(roomId);
@@ -167,6 +173,28 @@ export class SignalingGateway
     try {
       const { roomId, userId, displayName, password, audioEnabled = true, videoEnabled = true } = data;
 
+      // Check for duplicate session (multiple tabs)
+      const sessionKey = `room:${roomId}:user:${userId}:sessions`;
+      const existingSessions = await this.redis.smembers(sessionKey);
+      
+      // If there are existing sessions, check if they're still alive
+      const activeSessions = [];
+      for (const sessionId of existingSessions) {
+        const socket = this.server.sockets.sockets.get(sessionId);
+        if (socket && socket.connected) {
+          activeSessions.push(sessionId);
+        } else {
+          // Clean up stale session
+          await this.redis.srem(sessionKey, sessionId);
+        }
+      }
+
+      // If there's an active session from a different socket, reject
+      if (activeSessions.length > 0 && !activeSessions.includes(client.id)) {
+        this.logger.warn(`Duplicate session attempt: userId=${userId}, roomId=${roomId}`);
+        throw new Error('DUPLICATE_SESSION');
+      }
+
       // Validate password if required
       const requiresPassword = await this.roomSettingsService.requiresPassword(roomId);
       if (requiresPassword) {
@@ -197,6 +225,10 @@ export class SignalingGateway
       
       // Store socket ID to user ID mapping
       this.socketIdToUserId.set(client.id, userId);
+
+      // Track this session in Redis
+      await this.redis.sadd(sessionKey, client.id);
+      await this.redis.expire(sessionKey, 3600); // 1 hour TTL
 
       // Join Socket.IO rooms
       await client.join(roomId);

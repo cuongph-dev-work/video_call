@@ -102,7 +102,7 @@ export const MainVideo: React.FC<MainVideoProps> = ({
                     {displayName && (
                         <p className="text-lg font-medium text-white/80">{displayName}</p>
                     )}
-                    <p className="text-sm text-white/50 mt-2">Camera is off</p>
+                    <p className="text-sm text-white/50 mt-2">Camera đã tắt</p>
                 </div>
             )}
 

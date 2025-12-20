@@ -48,10 +48,10 @@ export const ThumbnailGrid: React.FC<ThumbnailGridProps> = ({ participants }) =>
                         <Users className="w-6 h-6 text-blue-400" />
                     </div>
                     <p className="text-gray-300 text-sm font-medium">
-                        Waiting for others to join...
+                        Đang chờ người khác tham gia...
                     </p>
                     <p className="text-gray-500 text-xs mt-1">
-                        Share the room code to invite participants
+                        Chia sẻ mã phòng để mời người tham gia
                     </p>
                 </div>
             </div>
@@ -79,7 +79,7 @@ export const ThumbnailGrid: React.FC<ThumbnailGridProps> = ({ participants }) =>
                             <Users className="w-5 h-5 text-blue-400/60" />
                         </div>
                         <p className="text-gray-400 text-xs font-medium">
-                            Waiting for others...
+                            Đang chờ người khác...
                         </p>
                     </div>
                 </div>

@@ -17,52 +17,109 @@ export const VideoThumbnail: React.FC<VideoThumbnailProps> = ({
     const videoRef = useRef<HTMLVideoElement>(null);
     const [hasVideoTrack, setHasVideoTrack] = useState(true);
 
-
-
+    // Attach stream and handle video playback
     useEffect(() => {
-        if (videoRef.current && stream) {
-            videoRef.current.srcObject = stream;
+        if (!videoRef.current || !stream) return;
 
-            // Listen for errors
-            const handleError = (e: Event) => {
-                console.error(`Video element error for ${displayName}:`, e);
-            };
-            videoRef.current.addEventListener('error', handleError);
+        const videoElement = videoRef.current;
 
-            // Wait for video to be ready before playing
-            const handleCanPlay = () => {
-                if (videoRef.current) {
-                    videoRef.current.play().catch(err => {
+        // Pause and clear srcObject before setting new one to prevent AbortError
+        videoElement.pause();
+        videoElement.srcObject = null;
+
+        // Small delay to ensure clean state
+        const setupStream = () => {
+            videoElement.srcObject = stream;
+
+            let canplayFired = false;
+            let fallbackTimeout: NodeJS.Timeout | null = null;
+            let playInProgress = false;
+
+            // Attempt to play video
+            const attemptPlay = async () => {
+                if (!videoElement || playInProgress) return;
+
+                playInProgress = true;
+                try {
+                    await videoElement.play();
+                } catch (err) {
+                    // Ignore AbortError (happens when srcObject changes)
+                    if (err instanceof Error && err.name !== 'AbortError') {
                         console.error(`Failed to play video for ${displayName}:`, err);
-                    });
-                }
-            };
-
-            videoRef.current.addEventListener('canplay', handleCanPlay);
-
-            // Update track state when metadata loads
-            const handleLoadedMetadata = () => {
-                setTimeout(() => {
-                    const videoTrack = stream.getVideoTracks()[0];
-                    if (videoTrack) {
-                        setHasVideoTrack(videoTrack.enabled);
                     }
-                }, 100);
-            };
-
-            videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
-
-            return () => {
-                if (videoRef.current) {
-                    videoRef.current.removeEventListener('error', handleError);
-                    videoRef.current.removeEventListener('canplay', handleCanPlay);
-                    videoRef.current.removeEventListener('loadedmetadata', handleLoadedMetadata);
+                } finally {
+                    playInProgress = false;
                 }
             };
-        }
+
+            // Smart play: Check readyState and decide strategy
+            const initializePlayback = () => {
+                if (!videoElement) return;
+
+                // If video has sufficient data (readyState >= 3), play immediately
+                if (videoElement.readyState >= 3) {
+                    attemptPlay();
+                } else {
+                    // Otherwise, wait for canplay event with a fallback timeout
+                    fallbackTimeout = setTimeout(() => {
+                        if (!canplayFired && videoElement) {
+                            attemptPlay();
+                        }
+                    }, 500);
+                }
+            };
+
+            // Handlers
+            const handleError = (e: Event) => {
+                console.error(`Video error for ${displayName}:`, e);
+            };
+
+            const handleCanPlay = () => {
+                canplayFired = true;
+                if (fallbackTimeout) {
+                    clearTimeout(fallbackTimeout);
+                    fallbackTimeout = null;
+                }
+                attemptPlay();
+            };
+
+            const handleLoadedMetadata = () => {
+                const videoTrack = stream.getVideoTracks()[0];
+                if (videoTrack) {
+                    setHasVideoTrack(videoTrack.enabled && !videoTrack.muted);
+                }
+            };
+
+            // Add event listeners
+            videoElement.addEventListener('error', handleError);
+            videoElement.addEventListener('canplay', handleCanPlay);
+            videoElement.addEventListener('loadedmetadata', handleLoadedMetadata);
+
+            // Initialize playback
+            initializePlayback();
+
+            // Cleanup
+            return () => {
+                if (fallbackTimeout) {
+                    clearTimeout(fallbackTimeout);
+                }
+                videoElement.removeEventListener('error', handleError);
+                videoElement.removeEventListener('canplay', handleCanPlay);
+                videoElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
+            };
+        };
+
+        // Add small delay to ensure clean state
+        const setupTimeout = setTimeout(setupStream, 50);
+
+        return () => {
+            clearTimeout(setupTimeout);
+            // Pause before cleanup to prevent AbortError
+            videoElement.pause();
+        };
     }, [stream, displayName]);
 
-    // Monitor video track state
+    // Monitor video track enabled state
     useEffect(() => {
         if (!stream) {
             setHasVideoTrack(false);
@@ -70,23 +127,49 @@ export const VideoThumbnail: React.FC<VideoThumbnailProps> = ({
         }
 
         const videoTrack = stream.getVideoTracks()[0];
-
         if (!videoTrack) {
             setHasVideoTrack(false);
             return;
         }
 
-        // Set initial state - only check enabled for remote tracks
-        // track.muted can fluctuate due to network/negotiation
-        setHasVideoTrack(videoTrack.enabled);
+        // Check if track is actually active (enabled and not muted)
+        const isTrackActive = () => {
+            return videoTrack.enabled && !videoTrack.muted;
+        };
 
-        // Monitor track enabled changes
+        // Set initial state
+        setHasVideoTrack(isTrackActive());
+
+        // Event-based updates for track state changes
+        const handleMute = () => {
+            setHasVideoTrack(false);
+        };
+
+        const handleUnmute = () => {
+            setHasVideoTrack(isTrackActive());
+        };
+
+        const handleEnded = () => {
+            setHasVideoTrack(false);
+        };
+
+        videoTrack.addEventListener('mute', handleMute);
+        videoTrack.addEventListener('unmute', handleUnmute);
+        videoTrack.addEventListener('ended', handleEnded);
+
+        // Poll for track state changes (fallback for enabled changes)
         const checkTrack = () => {
-            setHasVideoTrack(videoTrack.enabled);
+            setHasVideoTrack(isTrackActive());
         };
 
         const interval = setInterval(checkTrack, 200);
-        return () => clearInterval(interval);
+
+        return () => {
+            clearInterval(interval);
+            videoTrack.removeEventListener('mute', handleMute);
+            videoTrack.removeEventListener('unmute', handleUnmute);
+            videoTrack.removeEventListener('ended', handleEnded);
+        };
     }, [stream]);
 
     return (

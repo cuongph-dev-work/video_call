@@ -17,6 +17,7 @@ import { useSocket } from '@/shared/hooks/useSocket';
 import { useRoomStore, selectParticipantsList, selectRemoteStreamsList } from '@/domains/room/stores/useRoomStore';
 import { useRoomController } from '@/domains/room/hooks/useRoomController';
 import { useRoomAccess } from '@/domains/room/hooks/useRoomAccess';
+import { useRoomTabGuard } from '@/shared/hooks/useRoomTabGuard';
 
 // Types
 import { Participant } from '@/domains/room/types';
@@ -36,6 +37,7 @@ import { PasswordModal } from '@/shared/components/PasswordModal';
 import { RoomNotFoundModal } from '@/shared/components/RoomNotFoundModal';
 import { RejectionModal } from '@/shared/components/RejectionModal';
 import { MobileChat } from '@/domains/chat/components/MobileChat';
+import { DuplicateTabModal } from '@/domains/room/components/DuplicateTabModal';
 
 const RoomSettingsModal = dynamic(
     () => import('@/domains/settings/components').then((mod) => mod.RoomSettingsModal),
@@ -48,8 +50,17 @@ export default function RoomPage() {
     const roomId = params.roomId as string;
     const { isMobile, isTablet } = useResponsive();
 
-    // User preferences
+    // Get userId from preferences
     const userId = usePreferencesStore((state) => state.userId);
+
+    // Duplicate tab detection
+    const { isDuplicateTab } = useRoomTabGuard({
+        roomId,
+        userId,
+        enabled: true, // Enable after room is joined
+    });
+
+    // User preferences
     const displayName = usePreferencesStore((state) => state.displayName);
 
     // Local media
@@ -282,6 +293,11 @@ export default function RoomPage() {
     );
 
     // Render logic
+    // Check for duplicate tab first
+    if (isDuplicateTab) {
+        return <DuplicateTabModal onClose={() => router.push('/')} />;
+    }
+
     if (showRoomNotFound) {
         return <RoomNotFoundModal isOpen={showRoomNotFound} />;
     }
