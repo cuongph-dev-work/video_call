@@ -84,7 +84,7 @@ export const MainVideo: React.FC<MainVideoProps> = ({
     }, [stream]);
 
     return (
-        <div className="flex-1 relative bg-white/5 rounded-3xl overflow-hidden shadow-2xl group">
+        <div className="relative bg-white/5 rounded-3xl overflow-hidden shadow-2xl group h-full w-full">
             <video
                 ref={videoRef}
                 autoPlay

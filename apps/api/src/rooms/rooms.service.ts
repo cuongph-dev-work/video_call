@@ -126,7 +126,16 @@ export class RoomsService {
     this.logger.log(`Room created: ${roomId}`);
   }
 
-  async joinRoom(roomId: string, userId: string, displayName: string): Promise<Participant[]> {
+  async joinRoom(
+    roomId: string,
+    userId: string,
+    options: {
+      displayName: string;
+      audioEnabled?: boolean;
+      videoEnabled?: boolean;
+    },
+  ): Promise<Participant[]> {
+    const { displayName, audioEnabled = true, videoEnabled = true } = options;
     // Cleanup stale room if needed
     if (await this.redis.exists(this.roomKey(roomId))) {
       if (await this.shouldCleanupRoom(roomId)) {
@@ -153,8 +162,8 @@ export class RoomsService {
     const participant: Participant = {
       id: userId,
       displayName,
-      audioEnabled: true,
-      videoEnabled: true,
+      audioEnabled,
+      videoEnabled,
       isHost,
       joinedAt: Date.now(),
     };

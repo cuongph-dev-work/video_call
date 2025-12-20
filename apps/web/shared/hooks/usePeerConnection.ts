@@ -9,6 +9,8 @@ interface UsePeerConnectionProps {
   socket: Socket | null;
   roomId: string;
   userId: string | null;
+  onRemoteStreamAdded?: (peerId: string, stream: MediaStream) => void;
+  onRemoteStreamRemoved?: (peerId: string) => void;
 }
 
 interface Participant {
@@ -16,7 +18,7 @@ interface Participant {
   displayName?: string;
 }
 
-export function usePeerConnection({ localStream, socket, userId }: UsePeerConnectionProps) {
+export function usePeerConnection({ localStream, socket, userId, onRemoteStreamAdded, onRemoteStreamRemoved }: UsePeerConnectionProps) {
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
   const pendingOffersRef = useRef<Set<string>>(new Set()); // Track pending offers to prevent race conditions
@@ -32,10 +34,9 @@ export function usePeerConnection({ localStream, socket, userId }: UsePeerConnec
     pendingOffersRef.current.delete(peerId);
     pendingIceCandidatesRef.current.delete(peerId);
     
-    window.dispatchEvent(new CustomEvent('remote-stream-removed', {
-      detail: { peerId }
-    }));
-  }, []);
+    // Call callback instead of dispatching window event
+    onRemoteStreamRemoved?.(peerId);
+  }, [onRemoteStreamRemoved]);
 
   const createPeerConnection = useCallback((peerId: string): RTCPeerConnection => {
     const pc = new RTCPeerConnection({
@@ -69,11 +70,9 @@ export function usePeerConnection({ localStream, socket, userId }: UsePeerConnec
         console.log('   Remote stream tracks:', remoteStream.getTracks().length);
         remoteStreamsRef.current.set(peerId, remoteStream);
         
-        // Trigger re-render by dispatching custom event
-        window.dispatchEvent(new CustomEvent('remote-stream-added', {
-          detail: { peerId, stream: remoteStream }
-        }));
-        console.log('   ✅ Dispatched remote-stream-added event');
+        // Call callback immediately instead of dispatching event
+        onRemoteStreamAdded?.(peerId, remoteStream);
+        console.log('   ✅ Called onRemoteStreamAdded callback');
       }
     };
 
@@ -89,7 +88,7 @@ export function usePeerConnection({ localStream, socket, userId }: UsePeerConnec
 
     peersRef.current.set(peerId, pc);
     return pc;
-  }, [localStream, socket, closePeer]);
+  }, [localStream, socket, closePeer, onRemoteStreamAdded]);
 
   const createOffer = useCallback(async (peerId: string) => {
     console.log('📤 Creating offer for peer:', peerId);

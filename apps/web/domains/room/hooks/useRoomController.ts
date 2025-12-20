@@ -78,12 +78,11 @@ export function useRoomController(
     
     // If we transitioned from Disconnected -> Connected, AND we are supposed to be in a room
     if (isConnected && !wasConnected && isJoined && socketManagerRef.current && userId && displayName) {
-      socketManagerRef.current.joinRoom(
-        userId,
+      socketManagerRef.current.joinRoom(userId, {
         displayName,
-        audioEnabled, 
-        videoEnabled
-      );
+        audioEnabled,
+        videoEnabled,
+      });
     }
   }, [isConnected, isJoined, userId, displayName, audioEnabled, videoEnabled]);
   
@@ -105,12 +104,11 @@ export function useRoomController(
       return;
     }
 
-    socketManagerRef.current.joinRoom(
-      userId,
+    socketManagerRef.current.joinRoom(userId, {
       displayName,
       audioEnabled,
-      videoEnabled
-    );
+      videoEnabled,
+    });
   }, [userId, displayName, audioEnabled, videoEnabled]);
 
   const leaveRoom = useCallback(() => {

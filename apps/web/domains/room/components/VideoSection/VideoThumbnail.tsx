@@ -17,25 +17,35 @@ export const VideoThumbnail: React.FC<VideoThumbnailProps> = ({
     const videoRef = useRef<HTMLVideoElement>(null);
     const [hasVideoTrack, setHasVideoTrack] = useState(true);
 
+
+
     useEffect(() => {
         if (videoRef.current && stream) {
             videoRef.current.srcObject = stream;
 
-            // Force track state check when video metadata loaded
+            // Listen for errors
+            const handleError = (e: Event) => {
+                console.error(`Video element error for ${displayName}:`, e);
+            };
+            videoRef.current.addEventListener('error', handleError);
+
+            // Wait for video to be ready before playing
+            const handleCanPlay = () => {
+                if (videoRef.current) {
+                    videoRef.current.play().catch(err => {
+                        console.error(`Failed to play video for ${displayName}:`, err);
+                    });
+                }
+            };
+
+            videoRef.current.addEventListener('canplay', handleCanPlay);
+
+            // Update track state when metadata loads
             const handleLoadedMetadata = () => {
-                console.log('🎬 Thumbnail video metadata loaded for:', displayName);
-                // Trigger re-check after a small delay
                 setTimeout(() => {
                     const videoTrack = stream.getVideoTracks()[0];
                     if (videoTrack) {
-                        const hasVideo = videoTrack.enabled && !videoTrack.muted;
-                        console.log(`🎬 [${displayName}] Thumbnail post-load track state:`, {
-                            enabled: videoTrack.enabled,
-                            muted: videoTrack.muted,
-                            readyState: videoTrack.readyState,
-                            hasVideo
-                        });
-                        setHasVideoTrack(hasVideo);
+                        setHasVideoTrack(videoTrack.enabled);
                     }
                 }, 100);
             };
@@ -44,6 +54,8 @@ export const VideoThumbnail: React.FC<VideoThumbnailProps> = ({
 
             return () => {
                 if (videoRef.current) {
+                    videoRef.current.removeEventListener('error', handleError);
+                    videoRef.current.removeEventListener('canplay', handleCanPlay);
                     videoRef.current.removeEventListener('loadedmetadata', handleLoadedMetadata);
                 }
             };
@@ -64,17 +76,13 @@ export const VideoThumbnail: React.FC<VideoThumbnailProps> = ({
             return;
         }
 
-        // Set initial state immediately
-        const updateTrackState = () => {
-            const hasVideo = videoTrack.enabled && !videoTrack.muted;
-            setHasVideoTrack(hasVideo);
-        };
-
-        updateTrackState(); // Initial check
+        // Set initial state - only check enabled for remote tracks
+        // track.muted can fluctuate due to network/negotiation
+        setHasVideoTrack(videoTrack.enabled);
 
         // Monitor track enabled changes
         const checkTrack = () => {
-            updateTrackState();
+            setHasVideoTrack(videoTrack.enabled);
         };
 
         const interval = setInterval(checkTrack, 200);
@@ -83,7 +91,7 @@ export const VideoThumbnail: React.FC<VideoThumbnailProps> = ({
 
     return (
         <div
-            className={`relative bg-[#1c1f2e] rounded-2xl overflow-hidden group ${isActiveSpeaker
+            className={`relative bg-[#1c1f2e] rounded-2xl overflow-hidden group h-full ${isActiveSpeaker
                 ? 'border-2 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]'
                 : 'border border-white/5'
                 }`}

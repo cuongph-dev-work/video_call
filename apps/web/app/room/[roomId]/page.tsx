@@ -122,6 +122,12 @@ export default function RoomPage() {
         socket: getSocket(),
         roomId,
         userId,
+        onRemoteStreamAdded: (peerId, stream) => {
+            addRemoteStream(peerId, stream);
+        },
+        onRemoteStreamRemoved: (peerId) => {
+            removeRemoteStream(peerId);
+        },
     });
 
     // Recording
@@ -150,31 +156,9 @@ export default function RoomPage() {
         }
     }, [isJoined, userId, displayName, controller.isManagerReady]);
 
-    // Listen to remote stream events from WebRTC peer connections
+    // Get stream management functions from store (used in callbacks above)
     const addRemoteStream = useRoomStore((state) => state.addRemoteStream);
     const removeRemoteStream = useRoomStore((state) => state.removeRemoteStream);
-
-    useEffect(() => {
-        const handleRemoteStreamAdded = (event: Event) => {
-            const customEvent = event as CustomEvent<{ peerId: string; stream: MediaStream }>;
-            const { peerId, stream } = customEvent.detail;
-            addRemoteStream(peerId, stream);
-        };
-
-        const handleRemoteStreamRemoved = (event: Event) => {
-            const customEvent = event as CustomEvent<{ peerId: string }>;
-            const { peerId } = customEvent.detail;
-            removeRemoteStream(peerId);
-        };
-
-        window.addEventListener('remote-stream-added', handleRemoteStreamAdded);
-        window.addEventListener('remote-stream-removed', handleRemoteStreamRemoved);
-
-        return () => {
-            window.removeEventListener('remote-stream-added', handleRemoteStreamAdded);
-            window.removeEventListener('remote-stream-removed', handleRemoteStreamRemoved);
-        };
-    }, [addRemoteStream, removeRemoteStream]);
 
     // Event handlers
     const handleToggleScreenShare = useCallback(async () => {
@@ -226,7 +210,7 @@ export default function RoomPage() {
 
     // Video participants for grid (first 4)
     const videoParticipants = useMemo(() => {
-        return remoteStreamsList.slice(0, 4).map(({ id, stream }) => {
+        const result = remoteStreamsList.slice(0, 4).map(({ id, stream }) => {
             const participant = participants.find((p) => p.id === id);
             return {
                 id,
@@ -236,6 +220,7 @@ export default function RoomPage() {
                 isActiveSpeaker: false,
             };
         });
+        return result;
     }, [remoteStreamsList, participants]);
 
     // Cleanup waiting room on unmount
@@ -374,6 +359,7 @@ export default function RoomPage() {
             )}
 
             <main className="flex-1 flex overflow-hidden relative px-6 pb-6 gap-6">
+                {/* Video Section + Controls */}
                 <div className="flex-1 flex flex-col gap-4 min-w-0">
                     <VideoSection
                         mainSpeaker={{

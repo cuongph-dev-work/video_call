@@ -143,7 +143,7 @@ export class RoomSocketManager {
   // EMIT METHODS (public API)
   // ============================================
 
-  joinRoom(userId: string, displayName: string, audioEnabled: boolean, videoEnabled: boolean) {
+  joinRoom(userId: string, options: { displayName: string; audioEnabled: boolean; videoEnabled: boolean }) {
     if (!this.socket || !this.roomId) {
       return;
     }
@@ -151,9 +151,9 @@ export class RoomSocketManager {
     this.socket.emit('join-room', {
       roomId: this.roomId,
       userId,
-      displayName,
-      audioEnabled,
-      videoEnabled,
+      displayName: options.displayName,
+      audioEnabled: options.audioEnabled,
+      videoEnabled: options.videoEnabled,
     });
   }
 

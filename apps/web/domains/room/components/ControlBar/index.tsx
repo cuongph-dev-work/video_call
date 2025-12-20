@@ -96,14 +96,14 @@ export const ControlBar: React.FC<ControlBarProps> = ({
                     title={!canToggleVideo ? "Camera disabled by host" : undefined}
                 />
 
-                <ControlButton
+                {/* <ControlButton
                     icon={<MonitorUp className="w-5 h-5" />}
                     variant={!canToggleScreenShare ? "disabled" : undefined}
                     active={screenSharing}
                     onClick={handleToggleScreenShare}
                     disabled={!canToggleScreenShare}
                     title={!canToggleScreenShare ? "Screen sharing disabled by host" : undefined}
-                />
+                /> */}
 
                 {onToggleChat && (
                     <ControlButton

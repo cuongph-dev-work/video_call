@@ -186,7 +186,11 @@ export class SignalingGateway
       }
 
       // Join the room
-      const participants = await this.roomsService.joinRoom(roomId, userId, displayName);
+      const participants = await this.roomsService.joinRoom(roomId, userId, {
+        displayName,
+        audioEnabled,
+        videoEnabled,
+      });
       
       // Handle F5 refresh: disconnect old socket with same userId
       this.disconnectOldSocket(userId, client.id);

@@ -29,18 +29,28 @@ export const VideoSection: React.FC<VideoSectionProps> = ({
     isRecording,
     onFullscreen,
 }) => {
-    return (
-        <div className="flex-1 flex flex-col gap-4 min-w-0">
-            <MainVideo
-                stream={mainSpeaker.stream}
-                displayName={mainSpeaker.displayName}
-                audioEnabled={mainSpeaker.audioEnabled}
-                recordingTime={recordingTime}
-                isRecording={isRecording}
-                onFullscreen={onFullscreen}
-            />
+    const hasParticipants = participants.length > 0;
 
-            <ThumbnailGrid participants={participants} />
+    return (
+        <div className="flex-1 flex flex-col gap-4 min-w-0 min-h-0">
+            {/* Main Video - Takes remaining space */}
+            <div className="flex-1 min-w-0 min-h-0">
+                <MainVideo
+                    stream={mainSpeaker.stream}
+                    displayName={mainSpeaker.displayName}
+                    audioEnabled={mainSpeaker.audioEnabled}
+                    recordingTime={recordingTime}
+                    isRecording={isRecording}
+                    onFullscreen={onFullscreen}
+                />
+            </div>
+
+            {/* Participants Grid - Below main video */}
+            {hasParticipants && (
+                <div className="shrink-0">
+                    <ThumbnailGrid participants={participants} />
+                </div>
+            )}
         </div>
     );
 };

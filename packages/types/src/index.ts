@@ -5,3 +5,4 @@ export * from './chat';
 export * from './socket-events';
 export * from './room-settings';
 export * from './waiting-room';
+export * from './room';
